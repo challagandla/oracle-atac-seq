@@ -1,0 +1,9 @@
+name: atac-deeptools
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - deeptools=3.5.5
+  - samtools=1.20
+  - python=3.11

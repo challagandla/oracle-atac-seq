@@ -1,0 +1,14 @@
+sample	condition	replicate	fq1	fq2	sra
+# -----------------------------------------------------------------------------
+# One row per sample (per replicate). Tab-separated. Lines starting with # are
+# ignored. Required column: `sample` (unique). `condition` and `replicate` drive
+# grouping and the differential design. Provide EITHER fq1+fq2 (local paired
+# FASTQs) OR an `sra` accession (SRR/ERR/DRR) to download. Leave the other blank.
+# -----------------------------------------------------------------------------
+# Example: local paired-end FASTQs
+ctrl_rep1	control	1	data/fastq/ctrl_rep1_R1.fastq.gz	data/fastq/ctrl_rep1_R2.fastq.gz
+ctrl_rep2	control	2	data/fastq/ctrl_rep2_R1.fastq.gz	data/fastq/ctrl_rep2_R2.fastq.gz
+treat_rep1	treatment	1	data/fastq/treat_rep1_R1.fastq.gz	data/fastq/treat_rep1_R2.fastq.gz
+treat_rep2	treatment	2	data/fastq/treat_rep2_R1.fastq.gz	data/fastq/treat_rep2_R2.fastq.gz
+# Example: download from SRA instead (leave fq1/fq2 blank, fill sra)
+# gm12878_rep1	control	1			SRR891268

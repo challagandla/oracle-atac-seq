@@ -1,0 +1,63 @@
+# =============================================================================
+# ATAC-seq end-to-end Snakemake workflow
+# =============================================================================
+# Full-length (bulk) paired-end ATAC-seq: QC -> trim -> align -> filter ->
+# Tn5 shift -> peak calling (MACS3 + Genrich) -> consensus peaks -> counts ->
+# differential accessibility (DESeq2) -> annotation -> motif (HOMER) ->
+# optional TF footprinting (TOBIAS) / chromVAR -> MultiQC.
+#
+# Genome-agnostic: human (hg38), mouse (mm39/mm10), rat (rn7), or custom.
+# Input: local paired FASTQs and/or SRA accessions (auto-detected per sample).
+#
+# Usage:
+#   snakemake -n                                  # dry run (DAG preview)
+#   snakemake --use-conda --cores 16              # full run
+#   snakemake --use-conda --cores 16 multiqc      # just QC report
+#
+# See README.md for the complete tutorial.
+# =============================================================================
+
+from snakemake.utils import min_version
+
+min_version("7.25.0")
+
+
+configfile: "config/config.yaml"
+
+
+# ---- shared helpers, sample sheet parsing, genome presets --------------------
+include: "rules/common.smk"
+
+# ---- reference preparation (download/index genome, blacklist, TSS) -----------
+include: "rules/refs.smk"
+
+# ---- per-sample processing ---------------------------------------------------
+include: "rules/download.smk"     # SRA -> FASTQ (only for sra samples)
+include: "rules/trim.smk"         # fastp adapter/quality trimming
+include: "rules/align.smk"        # bowtie2 -> sorted BAM
+include: "rules/filter.smk"       # MAPQ, mito, dup, blacklist, Tn5 shift
+include: "rules/qc.smk"           # FastQC, ATACseqQC metrics, TSS, FRiP, fraglen
+
+# ---- peaks, signal, quantification ------------------------------------------
+include: "rules/peaks.smk"        # MACS3 + Genrich
+include: "rules/coverage.smk"     # deepTools bigWig (CPM-normalised)
+include: "rules/consensus.smk"    # reproducible consensus peak set
+include: "rules/counts.smk"       # featureCounts over consensus peaks
+
+# ---- downstream analysis -----------------------------------------------------
+include: "rules/diffacc.smk"      # DESeq2 differential accessibility
+include: "rules/annotate.smk"     # ChIPseeker annotation
+include: "rules/motif.smk"        # HOMER motif enrichment
+include: "rules/footprint.smk"    # TOBIAS footprinting (optional)
+include: "rules/chromvar.smk"     # chromVAR deviations (optional)
+
+# ---- aggregate report --------------------------------------------------------
+include: "rules/multiqc.smk"
+
+
+# -----------------------------------------------------------------------------
+# Default target: build everything that is enabled in config
+# -----------------------------------------------------------------------------
+rule all:
+    input:
+        collect_final_outputs(),

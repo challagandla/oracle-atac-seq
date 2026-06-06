@@ -1,0 +1,125 @@
+# =============================================================================
+# ATAC-seq Snakemake pipeline — main configuration
+# =============================================================================
+# Edit this file to point the pipeline at your data and reference genome.
+# Every path is relative to the directory you launch `snakemake` from
+# (the repository root) unless given as an absolute path.
+# -----------------------------------------------------------------------------
+
+# Sample sheet (TSV). See config/samples.tsv for the format.
+samples: "config/samples.tsv"
+
+# -----------------------------------------------------------------------------
+# Reference genome
+# -----------------------------------------------------------------------------
+# The pipeline is genome-agnostic. Choose one of the presets below by setting
+# `genome.build`, or override any field manually. Supported presets ship with
+# the correct ENCODE blacklist, effective genome size and MACS gsize.
+#
+#   human  -> GRCh38 / hg38
+#   mouse  -> GRCm39 / mm39   (use mm10 preset if your annotations are mm10)
+#   rat    -> mRatBN7.2 / rn7
+#
+# If `fasta`/`gtf` are left blank the `refs` rules will download them from the
+# Ensembl URL templates in `genome.ensembl_*`. Provide your own local paths to
+# skip downloading.
+genome:
+  build: "human"            # human | mouse | mouse_mm10 | rat | custom
+  fasta: ""                 # optional: local path to genome FASTA (.fa/.fa.gz)
+  gtf: ""                   # optional: local path to gene annotation GTF
+  blacklist: ""             # optional: local ENCODE blacklist BED (.bed/.bed.gz)
+  # Used only when build == "custom":
+  custom:
+    effective_genome_size: 0      # for deepTools (mappable bp)
+    macs_gsize: ""                # for MACS3 -g (e.g. "hs", "mm", or an integer)
+    ensembl_species: ""           # e.g. "homo_sapiens"
+    ensembl_release: 111
+    ensembl_assembly: ""          # e.g. "GRCh38"
+
+# -----------------------------------------------------------------------------
+# Input mode
+# -----------------------------------------------------------------------------
+# local : read paired FASTQs from the paths in samples.tsv (fq1/fq2 columns)
+# sra   : download FASTQs from SRA using the `sra` accession column
+# Either mode is selected per-sample automatically: a row with fq1/fq2 filled
+# is treated as local; a row with only an `sra` accession is downloaded.
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# Trimming (fastp)
+# -----------------------------------------------------------------------------
+trimming:
+  enabled: true
+  extra: "--detect_adapter_for_pe -q 20 -l 25"   # fastp flags
+
+# -----------------------------------------------------------------------------
+# Alignment (Bowtie2)
+# -----------------------------------------------------------------------------
+alignment:
+  # -X 2000 keeps long ATAC fragments (nucleosomal). --very-sensitive improves
+  # specificity. --no-mixed/--no-discordant keep only proper pairs.
+  bowtie2_extra: "--very-sensitive -X 2000 --no-mixed --no-discordant"
+
+# -----------------------------------------------------------------------------
+# Post-alignment filtering
+# -----------------------------------------------------------------------------
+filtering:
+  min_mapq: 30              # remove multi-mappers / low-confidence alignments
+  remove_mito: true         # drop chrM / MT reads (ATAC over-represents mito)
+  remove_blacklist: true    # drop reads overlapping ENCODE blacklist regions
+  keep_proper_pairs: true   # -f 2
+  remove_duplicates: true   # Picard MarkDuplicates + remove
+  # Tn5 shift: +4 bp on + strand, -5 bp on - strand (Buenrostro et al. 2013)
+  tn5_shift: true
+
+# -----------------------------------------------------------------------------
+# Peak calling
+# -----------------------------------------------------------------------------
+peaks:
+  # caller: macs3 | genrich  (macs3 is the default; genrich is run additionally
+  # when `run_genrich: true` to cross-check reproducible peaks per group).
+  caller: "macs3"
+  run_genrich: true
+  macs3_qvalue: 0.01
+  macs3_extra: "--nomodel --shift -75 --extsize 150 -B --keep-dup all"
+  genrich_extra: "-j -r -e chrM -q 0.05"   # -j = ATAC mode
+  # Consensus peak set across replicates/groups:
+  consensus_min_overlap: 2   # a peak must appear in >= N samples of a group
+
+# -----------------------------------------------------------------------------
+# Differential accessibility
+# -----------------------------------------------------------------------------
+diffacc:
+  enabled: true
+  method: "DESeq2"           # DESeq2 (via featureCounts on consensus peaks)
+  design: "~condition"       # R model formula; columns must exist in samples.tsv
+  contrast: ["condition", "treatment", "control"]   # factor, numerator, denominator
+  fdr: 0.05
+  lfc_threshold: 0
+
+# -----------------------------------------------------------------------------
+# Annotation & motif / footprint analysis
+# -----------------------------------------------------------------------------
+annotation:
+  enabled: true             # ChIPseeker peak annotation (needs matching TxDb/GTF)
+  tss_upstream: 3000
+  tss_downstream: 3000
+
+motif:
+  enabled: true             # HOMER de novo + known motif enrichment on diff peaks
+  homer_size: 200
+
+footprinting:
+  enabled: false            # TOBIAS TF footprinting (slow; opt-in)
+  motif_db: ""              # JASPAR .jaspar / .meme file of TF motifs
+
+chromvar:
+  enabled: false            # chromVAR per-sample motif accessibility deviations
+
+# -----------------------------------------------------------------------------
+# Resources (override per rule with --set-threads / profiles if needed)
+# -----------------------------------------------------------------------------
+resources:
+  align_threads: 8
+  sort_threads: 4
+  general_threads: 4

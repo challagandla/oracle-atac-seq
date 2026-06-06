@@ -1,0 +1,12 @@
+results/
+logs/
+resources/
+.snakemake/
+data/
+*.bam
+*.bai
+*.bw
+*.fastq.gz
+.DS_Store
+__pycache__/
+*.pyc

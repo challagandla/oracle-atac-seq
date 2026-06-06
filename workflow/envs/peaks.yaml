@@ -1,0 +1,14 @@
+name: atac-peaks
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - macs3=3.0.2
+  - genrich=0.6.1
+  - bedtools=2.31.1
+  - subread=2.0.6        # featureCounts
+  - samtools=1.20
+  - python=3.11
+  - pysam=0.22.1
+  - numpy=1.26

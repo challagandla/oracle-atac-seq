@@ -1,0 +1,67 @@
+# Minimal config used to dry-run / smoke-test the DAG without downloading a
+# real genome. Points at the tiny dummy fixtures under .test/.
+samples: ".test/samples.tsv"
+
+genome:
+  build: "human"
+  fasta: ".test/ref/genome.fa"
+  gtf: ".test/ref/genes.gtf"
+  blacklist: ".test/ref/blacklist.bed"
+  custom:
+    effective_genome_size: 0
+    macs_gsize: ""
+    ensembl_species: ""
+    ensembl_release: 111
+    ensembl_assembly: ""
+
+trimming:
+  enabled: true
+  extra: "--detect_adapter_for_pe -q 20 -l 25"
+
+alignment:
+  bowtie2_extra: "--very-sensitive -X 2000 --no-mixed --no-discordant"
+
+filtering:
+  min_mapq: 30
+  remove_mito: true
+  remove_blacklist: true
+  keep_proper_pairs: true
+  remove_duplicates: true
+  tn5_shift: true
+
+peaks:
+  caller: "macs3"
+  run_genrich: true
+  macs3_qvalue: 0.01
+  macs3_extra: "--nomodel --shift -75 --extsize 150 -B --keep-dup all"
+  genrich_extra: "-j -r -e chrM -q 0.05"
+  consensus_min_overlap: 2
+
+diffacc:
+  enabled: true
+  method: "DESeq2"
+  design: "~condition"
+  contrast: ["condition", "treatment", "control"]
+  fdr: 0.05
+  lfc_threshold: 0
+
+annotation:
+  enabled: true
+  tss_upstream: 3000
+  tss_downstream: 3000
+
+motif:
+  enabled: true
+  homer_size: 200
+
+footprinting:
+  enabled: true
+  motif_db: ".test/ref/motifs.jaspar"
+
+chromvar:
+  enabled: true
+
+resources:
+  align_threads: 8
+  sort_threads: 4
+  general_threads: 4

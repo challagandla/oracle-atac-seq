@@ -1,0 +1,11 @@
+# Default Snakemake profile. Run with:  snakemake --profile profiles/default
+# Tune cores / conda front-end / retries here, or copy this folder to make a
+# cluster (SLURM/SGE) profile.
+use-conda: true
+conda-frontend: mamba
+cores: 16
+rerun-incomplete: true
+printshellcmds: true
+keep-going: true
+latency-wait: 60
+restart-times: 1

@@ -1,0 +1,10 @@
+name: atac-sra
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - sra-tools=3.1.1
+  - curl
+  - wget
+  - gzip

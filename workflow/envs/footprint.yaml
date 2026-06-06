@@ -1,0 +1,8 @@
+name: atac-footprint
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - tobias=0.16.1
+  - python=3.10

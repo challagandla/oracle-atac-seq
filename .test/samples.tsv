@@ -1,0 +1,5 @@
+sample	condition	replicate	fq1	fq2	sra
+ctrl_rep1	control	1	.test/data/fastq/ctrl_rep1_R1.fastq.gz	.test/data/fastq/ctrl_rep1_R2.fastq.gz
+ctrl_rep2	control	2	.test/data/fastq/ctrl_rep2_R1.fastq.gz	.test/data/fastq/ctrl_rep2_R2.fastq.gz
+treat_rep1	treatment	1	.test/data/fastq/treat_rep1_R1.fastq.gz	.test/data/fastq/treat_rep1_R2.fastq.gz
+treat_rep2	treatment	2	.test/data/fastq/treat_rep2_R1.fastq.gz	.test/data/fastq/treat_rep2_R2.fastq.gz

@@ -1,0 +1,26 @@
+name: atac-r
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.3
+  - r-optparse
+  - r-ggplot2
+  - r-pheatmap
+  - r-rcolorbrewer
+  - bioconductor-deseq2=1.42
+  - bioconductor-chipseeker=1.38
+  - bioconductor-genomicranges
+  - bioconductor-genomicfeatures
+  - bioconductor-rtracklayer
+  - bioconductor-chromvar=1.24
+  - bioconductor-motifmatchr
+  - bioconductor-summarizedexperiment
+  - bioconductor-jaspar2020
+  - bioconductor-tfbstools
+  # TxDb/OrgDb/BSgenome packages are large; install the ones matching your
+  # genome on first use, e.g.:
+  #   - bioconductor-txdb.hsapiens.ucsc.hg38.knowngene
+  #   - bioconductor-org.hs.eg.db
+  #   - bioconductor-bsgenome.hsapiens.ucsc.hg38
