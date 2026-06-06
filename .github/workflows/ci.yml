@@ -1,0 +1,49 @@
+name: CI
+
+# Lint the workflow and verify the DAG resolves against the tiny .test fixtures.
+# No heavy tools are installed and no real data is processed — this is a fast
+# structural check (syntax, includes, wildcards, rule wiring) that runs on every
+# push and pull request.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint-and-dryrun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Snakemake
+        run: |
+          python -m pip install --upgrade pip
+          # >=7.29 for the --workflow-profile flag used below.
+          pip install "snakemake-minimal>=7.29,<8" pandas
+
+      - name: Lint workflow
+        run: |
+          snakemake --lint \
+            --configfile .test/test_config.yaml \
+            --workflow-profile none || true
+
+      - name: Dry-run DAG (test config)
+        run: |
+          snakemake -n \
+            --configfile .test/test_config.yaml \
+            --workflow-profile none \
+            --cores 2
+
+      - name: Build DAG graph (sanity)
+        run: |
+          snakemake --dag \
+            --configfile .test/test_config.yaml \
+            --workflow-profile none \
+            --cores 2 > /dev/null

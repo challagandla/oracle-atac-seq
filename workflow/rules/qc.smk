@@ -97,3 +97,30 @@ rule frip:
             --bam {input.bam} --peaks {input.peaks} \
             --sample {wildcards.sample} --out {output} 2> {log}
         """
+
+
+# Aggregate per-sample FRiP into a MultiQC custom-content table. The `_mqc.tsv`
+# suffix and the embedded `# id:` header make MultiQC render it as its own
+# section automatically (no extra config needed).
+rule frip_table:
+    input:
+        expand(f"{RESULTS}/qc/frip/{{s}}.frip.txt", s=SAMPLES),
+    output:
+        f"{RESULTS}/qc/frip/frip_mqc.tsv",
+    log:
+        f"{LOGS}/qc/frip_table.log",
+    shell:
+        r"""
+        {{
+          echo "# id: 'frip'"
+          echo "# section_name: 'FRiP (Fraction of Reads in Peaks)'"
+          echo "# description: 'Fraction of properly-paired reads overlapping MACS3 peaks. ENCODE recommends > 0.2-0.3.'"
+          echo "# plot_type: 'table'"
+          echo "# pconfig:"
+          echo "#     id: 'frip_table'"
+          echo "#     namespace: 'ATAC'"
+          echo -e "Sample\ttotal_reads\treads_in_peaks\tFRiP"
+          # concatenate the data row (line 2) of every per-sample file
+          for f in {input}; do tail -n +2 "$f"; done
+        }} > {output} 2> {log}
+        """

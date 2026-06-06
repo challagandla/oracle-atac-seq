@@ -1,0 +1,17 @@
+# Force LF for all text so scripts run correctly on Linux/macOS even when the
+# repo is cloned or edited on Windows. CRLF in a shebang or shell heredoc breaks
+# execution, so this matters for a cross-platform workflow.
+* text=auto eol=lf
+
+# Explicitly normalise the executable / interpreted files.
+*.smk    text eol=lf
+*.py     text eol=lf
+*.R      text eol=lf
+*.sh     text eol=lf
+*.yaml   text eol=lf
+*.yml    text eol=lf
+*.tsv    text eol=lf
+Snakefile text eol=lf
+
+# Binary fixtures (none yet) would be marked here, e.g.:
+# *.bam binary

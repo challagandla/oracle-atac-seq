@@ -23,9 +23,17 @@ rule homer_motifs:
     shell:
         r"""
         mkdir -p {params.outdir}
-        # HOMER needs a 6-column BED (name + score + strand); add if missing.
-        awk 'BEGIN{{OFS="\t"}}{{print $1,$2,$3,"peak"NR,0,"+"}}' {input.peaks} \
-            > {params.outdir}/input.bed
-        findMotifsGenome.pl {params.outdir}/input.bed {params.genome} \
-            {params.outdir} -size {params.size} -p {threads} 2> {log}
+        # If DESeq2 found no peaks in this direction, skip HOMER (it errors on
+        # an empty region file) and emit a placeholder report so the DAG completes.
+        if [ ! -s {input.peaks} ]; then
+            echo "No {wildcards.direction}-regulated peaks; HOMER skipped." > {log}
+            echo "<html><body><h3>No {wildcards.direction}-regulated peaks — HOMER skipped.</h3></body></html>" \
+                > {output.html}
+        else
+            # HOMER needs a 6-column BED (name + score + strand); add if missing.
+            awk 'BEGIN{{OFS="\t"}}{{print $1,$2,$3,"peak"NR,0,"+"}}' {input.peaks} \
+                > {params.outdir}/input.bed
+            findMotifsGenome.pl {params.outdir}/input.bed {params.genome} \
+                {params.outdir} -size {params.size} -p {threads} 2> {log}
+        fi
         """

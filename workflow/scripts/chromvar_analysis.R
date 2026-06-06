@@ -20,6 +20,8 @@ opt <- parse_args(OptionParser(option_list = list(
   make_option("--bed"),
   make_option("--samples"),
   make_option("--bsgenome", default = ""),
+  make_option("--taxid", type = "integer", default = 9606,
+              help = "NCBI taxonomy id for JASPAR motif selection (9606 human, 10090 mouse, 10116 rat)"),
   make_option("--out-dev", dest = "out_dev"),
   make_option("--out-var", dest = "out_var")
 )))
@@ -46,10 +48,10 @@ se <- filterPeaks(se, non_overlapping = TRUE)
 
 # ---- motifs -----------------------------------------------------------------
 motifs <- getMatrixSet(JASPAR2020,
-                       list(species = 9606, collection = "CORE"))
-match <- matchMotifs(motifs, se, genome = genome)
+                       list(species = opt$taxid, collection = "CORE"))
+motif_hits <- matchMotifs(motifs, se, genome = genome)
 
-dev <- computeDeviations(object = se, annotations = match)
+dev <- computeDeviations(object = se, annotations = motif_hits)
 variability <- computeVariability(dev)
 
 write.table(data.frame(motif = rownames(deviations(dev)),

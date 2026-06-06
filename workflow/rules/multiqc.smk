@@ -10,7 +10,7 @@ def multiqc_inputs(wildcards):
     inp += expand(f"{RESULTS}/qc/fastp/{{s}}.fastp.json", s=SAMPLES)
     inp += expand(f"{RESULTS}/qc/flagstat/{{s}}.raw.flagstat", s=SAMPLES)
     inp += expand(f"{RESULTS}/qc/picard/{{s}}.dup_metrics.txt", s=SAMPLES)
-    inp += expand(f"{RESULTS}/qc/frip/{{s}}.frip.txt", s=SAMPLES)
+    inp += [f"{RESULTS}/qc/frip/frip_mqc.tsv"]
     inp += expand(f"{RESULTS}/qc/fragsize/{{s}}.fragsize.txt", s=SAMPLES)
     inp += expand(f"{RESULTS}/qc/tss/{{s}}.tss_enrichment.png", s=SAMPLES)
     inp += [f"{RESULTS}/counts/consensus_counts.tsv.summary"]

@@ -10,3 +10,6 @@ data/
 .DS_Store
 __pycache__/
 *.pyc
+
+# Local Claude Code settings (machine-specific, not for the repo)
+.claude/

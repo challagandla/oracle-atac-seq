@@ -2,6 +2,7 @@
 # common.smk — sample-sheet parsing, genome presets, helper functions
 # =============================================================================
 import os
+import re
 import pandas as pd
 
 # -----------------------------------------------------------------------------
@@ -60,6 +61,17 @@ def samples_in_condition(cond):
 
 
 # -----------------------------------------------------------------------------
+# Wildcard constraints — pin wildcards to known values so Snakemake never
+# mis-splits sample names that contain underscores (e.g. "ctrl_rep1_R1").
+# -----------------------------------------------------------------------------
+wildcard_constraints:
+    sample="|".join(re.escape(s) for s in SAMPLES) if SAMPLES else "$^",
+    cond="|".join(re.escape(c) for c in sorted(set(samples["condition"]))) or "$^",
+    read="R1|R2",
+    direction="up|down",
+
+
+# -----------------------------------------------------------------------------
 # Genome presets
 # -----------------------------------------------------------------------------
 # effective_genome_size: deepTools mappable size for 2x ~50-100bp reads.
@@ -70,6 +82,7 @@ GENOME_PRESETS = {
         "ensembl_species": "homo_sapiens",
         "ensembl_assembly": "GRCh38",
         "ensembl_release": 111,
+        "taxid": 9606,
         "effective_genome_size": 2913022398,
         "macs_gsize": "hs",
         "blacklist_url": "https://github.com/Boyle-Lab/Blacklist/raw/master/lists/hg38-blacklist.v2.bed.gz",
@@ -82,6 +95,7 @@ GENOME_PRESETS = {
         "ensembl_species": "mus_musculus",
         "ensembl_assembly": "GRCm39",
         "ensembl_release": 111,
+        "taxid": 10090,
         "effective_genome_size": 2654621783,
         "macs_gsize": "mm",
         "blacklist_url": "https://github.com/Boyle-Lab/Blacklist/raw/master/lists/mm10-blacklist.v2.bed.gz",
@@ -94,6 +108,7 @@ GENOME_PRESETS = {
         "ensembl_species": "mus_musculus",
         "ensembl_assembly": "GRCm38",
         "ensembl_release": 102,
+        "taxid": 10090,
         "effective_genome_size": 2652783500,
         "macs_gsize": "mm",
         "blacklist_url": "https://github.com/Boyle-Lab/Blacklist/raw/master/lists/mm10-blacklist.v2.bed.gz",
@@ -106,6 +121,7 @@ GENOME_PRESETS = {
         "ensembl_species": "rattus_norvegicus",
         "ensembl_assembly": "mRatBN7.2",
         "ensembl_release": 111,
+        "taxid": 10116,
         "effective_genome_size": 2626580772,
         "macs_gsize": "2.6e9",
         "blacklist_url": "",  # No official ENCODE blacklist for rn7; see README.

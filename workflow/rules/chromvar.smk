@@ -15,6 +15,7 @@ rule chromvar:
         var=f"{RESULTS}/chromvar/chromvar_variability.tsv",
     params:
         bsgenome=GENOME.get("bsgenome", ""),
+        taxid=GENOME.get("taxid", 9606),
     log:
         f"{LOGS}/chromvar/chromvar.log",
     conda:
@@ -27,5 +28,6 @@ rule chromvar:
             --bed {input.bed} \
             --samples {input.samples} \
             --bsgenome "{params.bsgenome}" \
+            --taxid {params.taxid} \
             --out-dev {output.dev} --out-var {output.var} 2> {log}
         """

@@ -1,5 +1,7 @@
 # ATAC-seq Snakemake Pipeline — Full-Length (Bulk) Paired-End
 
+[![CI](https://github.com/challagandla/oracle-atacseq/actions/workflows/ci.yml/badge.svg)](https://github.com/challagandla/oracle-atacseq/actions/workflows/ci.yml)
+
 A reproducible, genome-agnostic Snakemake workflow for bulk ATAC-seq, built on
 current best practices from the most-cited methods literature. It takes raw
 paired-end FASTQs (or SRA accessions) all the way to differential chromatin
