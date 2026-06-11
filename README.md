@@ -426,3 +426,16 @@ BINDetect output ranks TFs by differential binding between your conditions.
 *Built for reproducible bulk ATAC-seq on Ubuntu/Linux with Snakemake, conda,
 Python and R. Verified by Snakemake DAG dry-run (87-job full workflow) plus
 unit tests of the consensus and TSS helper scripts.*
+
+---
+
+## License & usage
+
+The pipeline's own code is **MIT** (see [LICENSE](LICENSE)). It bundles no third-party code or data;
+tools are conda-installed and invoked, so the MIT license is unaffected by the (incl. GPL) licenses of
+those tools. Full breakdown: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+> ⚠️ **The HOMER motif step is academic / non-profit only** — HOMER is freeware, not open-source, and
+> not redistributable; commercial use requires the author's permission (and its genome packages are
+> UCSC-derived). For commercial use, obtain permission or skip the HOMER motif step; peak calling,
+> differential accessibility, and JASPAR footprinting do not depend on it.
