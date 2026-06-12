@@ -29,6 +29,8 @@ rule bowtie2_align:
         r"""
         mkdir -p $(dirname {output.bam})
         bowtie2 -x {params.prefix} -1 {input.r1} -2 {input.r2} \
+            --rg-id {wildcards.sample} \
+            --rg SM:{wildcards.sample} --rg LB:{wildcards.sample} --rg PL:ILLUMINA \
             -p {threads} {params.extra} 2> {log.bt2} \
           | samtools sort -@ {threads} -o {output.bam} - 2> {log.sort}
         samtools index {output.bam}

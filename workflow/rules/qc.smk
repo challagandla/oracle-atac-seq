@@ -18,12 +18,22 @@ rule fastqc_raw:
         outdir=f"{RESULTS}/qc/fastqc",
     log:
         f"{LOGS}/qc/fastqc_{{sample}}_{{read}}.log",
+    # FastQC needs ~10GB heap on very deep libraries (see --memory below). Declare
+    # it so `snakemake --resources mem_mb=<node_total>` won't pack too many of
+    # these JVMs onto one node (running many concurrently exhausts RAM and they
+    # die silently at ~95%).
+    resources:
+        mem_mb=10000,
     conda:
         "../envs/qc.yaml"
     shell:
         r"""
         mkdir -p {params.outdir}
-        fastqc -o {params.outdir} {input} 2> {log}
+        # --memory 10000: FastQC's 512MB default makes its per-sequence
+        # duplication module die near 95% on very deep (>150M-read) libraries;
+        # ~10GB clears it. The JVM reserves but does not commit, so this is
+        # harmless for small inputs.
+        fastqc --memory 10000 -o {params.outdir} {input} 2> {log}
         # Normalise FastQC's auto-naming to <sample>_<read>_fastqc.*
         base=$(basename {input} | sed -E 's/\.(fastq|fq)(\.gz)?$//')
         for ext in html zip; do

@@ -5,5 +5,6 @@ channels:
   - nodefaults
 dependencies:
   - deeptools=3.5.5
+  - numpy=1.26.*        # deeptools 3.5.5 uses np.NAN, removed in numpy 2.x
   - samtools=1.20
   - python=3.11
