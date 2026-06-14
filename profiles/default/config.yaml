@@ -4,6 +4,11 @@
 use-conda: true
 conda-frontend: mamba
 cores: 16
+# Memory budget (MB). Rules that declare resources.mem_mb (e.g. FastQC, which
+# needs ~10GB on very deep libraries) are scheduled against this so they don't
+# all run at once and exhaust RAM. Raise/lower to match your node.
+resources:
+  - mem_mb=24000
 rerun-incomplete: true
 printshellcmds: true
 keep-going: true
