@@ -23,7 +23,9 @@ rule chromvar:
     shell:
         r"""
         mkdir -p $(dirname {output.dev})
-        Rscript workflow/scripts/chromvar_analysis.R \
+        # Use only the conda env's R library and ignore ~/.Rprofile/.Renviron (see diffacc.smk).
+        export R_LIBS_USER="$CONDA_PREFIX/lib/R/library"
+        Rscript --vanilla workflow/scripts/chromvar_analysis.R \
             --counts {input.counts} \
             --bed {input.bed} \
             --samples {input.samples} \

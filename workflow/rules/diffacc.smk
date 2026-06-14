@@ -30,7 +30,11 @@ rule deseq2:
     shell:
         r"""
         mkdir -p $(dirname {output.tsv})
-        Rscript workflow/scripts/differential_accessibility.R \
+        # Use only the conda env's R library and ignore ~/.Rprofile/.Renviron, so a
+        # host R_LIBS_USER or .libPaths() can't shadow env packages with an
+        # ABI-incompatible build (e.g. SummarizedExperiment/Biobase load failures).
+        export R_LIBS_USER="$CONDA_PREFIX/lib/R/library"
+        Rscript --vanilla workflow/scripts/differential_accessibility.R \
             --counts {input.counts} \
             --samples {input.samples} \
             --design "{params.design}" \

@@ -24,7 +24,9 @@ rule chipseeker_annotate:
     shell:
         r"""
         mkdir -p $(dirname {output.tsv})
-        Rscript workflow/scripts/annotate_peaks.R \
+        # Use only the conda env's R library and ignore ~/.Rprofile/.Renviron (see diffacc.smk).
+        export R_LIBS_USER="$CONDA_PREFIX/lib/R/library"
+        Rscript --vanilla workflow/scripts/annotate_peaks.R \
             --bed {input.bed} \
             --gtf {input.gtf} \
             --txdb "{params.txdb}" \
