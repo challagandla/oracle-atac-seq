@@ -7,10 +7,15 @@ dependencies:
   - r-base=4.3
   - r-optparse
   - r-ggplot2
+  - r-ggrepel
   - r-pheatmap
   - r-rcolorbrewer
+  - r-matrixstats
+  - r-ashr
   - bioconductor-deseq2=1.42
   - bioconductor-chipseeker=1.38
+  - bioconductor-clusterprofiler   # GO/KEGG enrichment of DA genes
+  - bioconductor-enrichplot        # dotplot() for enrichment figures
   - bioconductor-genomicranges
   - bioconductor-genomicfeatures
   - bioconductor-rtracklayer
@@ -19,8 +24,11 @@ dependencies:
   - bioconductor-summarizedexperiment
   - bioconductor-jaspar2020
   - bioconductor-tfbstools
-  # TxDb/OrgDb/BSgenome packages are large; install the ones matching your
-  # genome on first use, e.g.:
-  #   - bioconductor-txdb.hsapiens.ucsc.hg38.knowngene
-  #   - bioconductor-org.hs.eg.db
-  #   - bioconductor-bsgenome.hsapiens.ucsc.hg38
+  # Genome annotation data packages (UCSC). These drive ChIPseeker annotation
+  # and chromVAR. They are large but required for those stages. Swap for the
+  # packages matching your genome build for non-human runs, e.g. mouse:
+  #   bioconductor-txdb.mmusculus.ucsc.mm39.refgene / org.mm.eg.db /
+  #   bsgenome.mmusculus.ucsc.mm39
+  - bioconductor-txdb.hsapiens.ucsc.hg38.knowngene
+  - bioconductor-org.hs.eg.db
+  - bioconductor-bsgenome.hsapiens.ucsc.hg38

@@ -13,9 +13,12 @@ rule chromvar:
     output:
         dev=f"{RESULTS}/chromvar/chromvar_deviations.tsv",
         var=f"{RESULTS}/chromvar/chromvar_variability.tsv",
+        varplot=f"{RESULTS}/chromvar/chromvar_variability.pdf",
+        heatmap=f"{RESULTS}/chromvar/chromvar_deviation_heatmap.pdf",
     params:
         bsgenome=GENOME.get("bsgenome", ""),
         taxid=GENOME.get("taxid", 9606),
+        top_n=config.get("chromvar", {}).get("top_n", 30),
     log:
         f"{LOGS}/chromvar/chromvar.log",
     conda:
@@ -30,6 +33,7 @@ rule chromvar:
             --bed {input.bed} \
             --samples {input.samples} \
             --bsgenome "{params.bsgenome}" \
-            --taxid {params.taxid} \
-            --out-dev {output.dev} --out-var {output.var} 2> {log}
+            --taxid {params.taxid} --top-n {params.top_n} \
+            --out-dev {output.dev} --out-var {output.var} \
+            --out-var-plot {output.varplot} --out-heatmap {output.heatmap} 2> {log}
         """

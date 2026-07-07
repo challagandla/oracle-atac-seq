@@ -16,6 +16,19 @@ rule deseq2:
         norm=f"{RESULTS}/diffacc/normalized_counts.tsv",
         up=f"{RESULTS}/diffacc/up_peaks.bed",
         down=f"{RESULTS}/diffacc/down_peaks.bed",
+        volcano=f"{RESULTS}/diffacc/volcano_plot.pdf",
+        corr=f"{RESULTS}/diffacc/sample_correlation_heatmap.pdf",
+        dist=f"{RESULTS}/diffacc/sample_distance_heatmap.pdf",
+        scree=f"{RESULTS}/diffacc/scree_plot.pdf",
+        heat=f"{RESULTS}/diffacc/differential_peaks_heatmap.pdf",
+        pval=f"{RESULTS}/diffacc/pvalue_histogram.pdf",
+        summary=f"{RESULTS}/diffacc/diffacc_summary.tsv",
+        # Headline figures re-exported as *_mqc.png for the MultiQC report.
+        mqc=expand(
+            f"{RESULTS}/diffacc/{{f}}_mqc.png",
+            f=["PCA_plot", "MA_plot", "volcano_plot",
+               "sample_correlation_heatmap", "differential_peaks_heatmap"],
+        ),
     params:
         design=config["diffacc"]["design"],
         factor=config["diffacc"]["contrast"][0],
@@ -26,7 +39,7 @@ rule deseq2:
     log:
         f"{LOGS}/diffacc/deseq2.log",
     conda:
-        "../envs/r.yaml"
+        "../envs/deseq2.yaml"
     shell:
         r"""
         mkdir -p $(dirname {output.tsv})

@@ -6,10 +6,10 @@
 
 rule bamcoverage:
     input:
-        bam=f"{RESULTS}/shifted/{{sample}}.shifted.bam",
-        bai=f"{RESULTS}/shifted/{{sample}}.shifted.bam.bai",
+        bam=f"{PROCESSED}/shifted/{{sample}}.shifted.bam",
+        bai=f"{PROCESSED}/shifted/{{sample}}.shifted.bam.bai",
     output:
-        bw=f"{RESULTS}/coverage/{{sample}}.cpm.bw",
+        bw=f"{PROCESSED}/coverage/{{sample}}.cpm.bw",
     params:
         egs=effective_genome_size(),
     threads: config["resources"]["general_threads"]

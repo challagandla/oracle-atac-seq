@@ -8,15 +8,15 @@
 
 rule macs3_callpeak:
     input:
-        bam=f"{RESULTS}/shifted/{{sample}}.shifted.bam",
+        bam=f"{PROCESSED}/shifted/{{sample}}.shifted.bam",
     output:
-        narrowpeak=f"{RESULTS}/peaks/macs3/{{sample}}_peaks.narrowPeak",
-        xls=f"{RESULTS}/peaks/macs3/{{sample}}_peaks.xls",
+        narrowpeak=f"{PROCESSED}/peaks/macs3/{{sample}}_peaks.narrowPeak",
+        xls=f"{PROCESSED}/peaks/macs3/{{sample}}_peaks.xls",
     params:
         gsize=macs_gsize(),
         q=config["peaks"]["macs3_qvalue"],
         extra=config["peaks"]["macs3_extra"],
-        outdir=f"{RESULTS}/peaks/macs3",
+        outdir=f"{PROCESSED}/peaks/macs3",
         name=lambda wc: wc.sample,
     log:
         f"{LOGS}/peaks/macs3_{{sample}}.log",
@@ -34,16 +34,16 @@ rule macs3_callpeak:
 def genrich_input_bams(wildcards):
     # Genrich requires name-sorted BAMs; we sort the filtered BAMs by name.
     return expand(
-        f"{RESULTS}/namesort/{{s}}.namesorted.bam",
+        f"{PROCESSED}/namesort/{{s}}.namesorted.bam",
         s=samples_in_condition(wildcards.cond),
     )
 
 
 rule namesort_for_genrich:
     input:
-        f"{RESULTS}/filtered/{{sample}}.filtered.bam",
+        f"{PROCESSED}/filtered/{{sample}}.filtered.bam",
     output:
-        temp(f"{RESULTS}/namesort/{{sample}}.namesorted.bam"),
+        temp(f"{PROCESSED}/namesort/{{sample}}.namesorted.bam"),
     threads: config["resources"]["sort_threads"]
     log:
         f"{LOGS}/peaks/namesort_{{sample}}.log",
@@ -60,7 +60,7 @@ rule genrich_callpeak:
     input:
         bams=genrich_input_bams,
     output:
-        narrowpeak=f"{RESULTS}/peaks/genrich/{{cond}}.narrowPeak",
+        narrowpeak=f"{PROCESSED}/peaks/genrich/{{cond}}.narrowPeak",
     params:
         extra=config["peaks"]["genrich_extra"],
         joined=lambda wc, input: ",".join(input.bams),

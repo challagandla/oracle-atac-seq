@@ -34,6 +34,7 @@ Snakemake itself.
 12. [Step-by-step tutorial (worked example)](#12-step-by-step-tutorial-worked-example)
 13. [Troubleshooting](#13-troubleshooting)
 14. [References](#14-references)
+15. [Downstream, tertiary analysis & recommendations](#15-downstream-tertiary-analysis--scientific-recommendations)
 
 ---
 
@@ -57,14 +58,22 @@ Consensus peaks        merged, reproducible peak set (≥N samples)
    ▼
 featureCounts          peak × sample fragment-count matrix
    ▼
-DESeq2                 differential accessibility (+ PCA, MA, normalized counts)
+DESeq2                 differential accessibility (ashr-shrunken LFC)
+   │                   + publication figures: volcano · MA · PCA + scree ·
+   │                     sample correlation/distance · DA-peak heatmap
    ├─► ChIPseeker      genomic annotation + nearest gene
+   ├─► clusterProfiler GO / KEGG enrichment of genes near up/down peaks
    ├─► HOMER           motif enrichment on up/down peaks
    ├─► TOBIAS          TF footprinting per condition (optional)
-   └─► chromVAR        per-sample motif accessibility deviations (optional)
+   └─► chromVAR        motif deviations + variability + TF heatmap (optional)
+
+QC completeness        library complexity (NRF/PBC1/PBC2) · deepTools
+   │                   fingerprint · fragment-size/nucleosome overlay ·
+   │                   TSS metagene heatmap + numeric enrichment score
    ▼
-MultiQC                one HTML report: FastQC, fastp, Bowtie2, Picard,
-                       fragment sizes, TSS enrichment, FRiP, featureCounts
+MultiQC                one HTML report: FastQC, fastp, Bowtie2, Picard, fragment
+                       sizes, TSS score, FRiP, complexity, fingerprint,
+                       featureCounts + embedded DA/QC figures
 ```
 
 ## 2. Method choices and why (the citations)
@@ -84,9 +93,13 @@ ATAC-seq data standards. Full citations in [§14](#14-references).
 | Quantification | **featureCounts** | Fast fragment counting over the consensus peak set (Liao et al. 2014). |
 | Differential | **DESeq2** | Robust negative-binomial model widely used for count-based accessibility (Love et al. 2014). |
 | Annotation | **ChIPseeker** | Standard peak→feature/gene annotation in Bioconductor (Yu et al. 2015). |
+| Functional enrichment | **clusterProfiler** | GO/KEGG over-representation of genes near differential peaks (Wu et al. 2021). |
 | Motifs | **HOMER** | De-novo + known TF motif enrichment on differential peaks (Heinz et al. 2010). |
 | Footprinting | **TOBIAS** | Bias-corrected, differential TF footprinting from bulk ATAC (Bentsen et al. 2020). |
 | Motif deviations | **chromVAR** | Bias-corrected per-sample motif accessibility variability (Schep et al. 2017). |
+| Library complexity | **NRF / PBC1 / PBC2** | ENCODE core ATAC QC for PCR bottlenecking / redundancy. |
+| Signal:noise | **deepTools plotFingerprint** | Cumulative read-enrichment; separates focused from background libraries. |
+| TSS enrichment | **deepTools computeMatrix** | Numeric TSS-enrichment score + metagene heatmap; the headline ATAC S/N metric. |
 | Aggregate QC | **MultiQC** | One report across all tools (Ewels et al. 2016). |
 | Workflow engine | **Snakemake** | Reproducible, conda-isolated, scalable DAG execution (Mölder et al. 2021). |
 
@@ -255,20 +268,36 @@ results/
 │   └── genrich/             <condition>.narrowPeak     (per group)
 ├── consensus/               consensus_peaks.bed / .saf
 ├── counts/                  consensus_counts.tsv (peak × sample matrix)
-├── diffacc/                 differential_accessibility.tsv, MA_plot.pdf,
-│                            PCA_plot.pdf, up_peaks.bed, down_peaks.bed
+├── diffacc/                 differential_accessibility.tsv (+ ashr-shrunken LFC),
+│                            diffacc_summary.tsv, normalized_counts.tsv,
+│                            up_peaks.bed / down_peaks.bed, and figures:
+│                            volcano_plot · MA_plot · PCA_plot + scree_plot ·
+│                            sample_correlation_heatmap · sample_distance_heatmap ·
+│                            differential_peaks_heatmap  (PDF + PNG)
 ├── annotation/              consensus_peaks.annotated.tsv, feature_distribution.pdf
+├── enrichment/              enrichment_dotplots.pdf + GO/KEGG result tables
 ├── motif/{up,down}/         HOMER homerResults.html (+ knownResults)
 ├── footprint/               TOBIAS corrected tracks + BINDetect per condition
-├── chromvar/                chromvar_deviations.tsv, chromvar_variability.tsv
+├── chromvar/                chromvar_deviations.tsv, chromvar_variability.tsv/.pdf,
+│                            chromvar_deviation_heatmap.pdf
+├── figures/                 fragment_size_distribution, tss_enrichment_heatmap,
+│                            tss_enrichment_profile  (aggregate, publication-ready)
 └── qc/
+    ├── complexity/          NRF / PBC1 / PBC2 per sample
+    ├── fingerprint/         deepTools fingerprint + JS-distance metrics
+    ├── tss/                 per-sample + aggregate TSS metagene, numeric score
     └── multiqc_report.html  ← START HERE
 ```
 
 The single most useful file is **`results/qc/multiqc_report.html`** — open it
-first. The key biological result is
+first; it now embeds the headline DA figures (volcano, PCA, correlation) and the
+QC figures (TSS metagene, fragment overlay) alongside the standard tool metrics.
+The key biological result is
 **`results/diffacc/differential_accessibility.tsv`** (columns: peak coords,
-`log2FoldChange`, `padj`, …), with the up/down BEDs feeding HOMER.
+`log2FoldChange`, ashr-shrunken `lfcShrink`, `padj`, …), with the up/down BEDs
+feeding HOMER and clusterProfiler. All vector PDFs under `results/figures/` and
+`results/diffacc/` are drawn on a shared colour-blind-safe theme for direct use
+in figures.
 
 ## 11. Quality-control checklist (ENCODE thresholds)
 
@@ -280,14 +309,29 @@ Check these in the MultiQC report before trusting downstream results:
 - **Fragment-size distribution** — must show the periodic ATAC pattern: a large
   sub-147 bp nucleosome-free peak, then mono-/di-nucleosome bumps (~200/~400 bp).
   A flat distribution = failed transposition.
-- **TSS enrichment** — sharp peak at the TSS; ENCODE flags <5 (hg38) as poor,
-  >7 as ideal. See `results/qc/tss/`.
+- **TSS enrichment score** — a single number per library in the MultiQC
+  "TSS enrichment score" table (and `results/qc/tss/tss_enrichment_mqc.tsv`).
+  ENCODE flags **<5 (hg38) as poor, >7 as ideal**. The aggregate metagene
+  heatmap/profile is in `results/figures/tss_enrichment_*`.
 - **FRiP** (fraction of reads in peaks) — ENCODE recommends **> 0.2–0.3**.
   See `results/qc/frip/`.
-- **Library complexity / duplication** — from Picard metrics; very high
-  duplication means an over-amplified, low-complexity library.
-- **Replicate PCA** (`results/diffacc/PCA_plot.pdf`) — replicates should cluster
-  by condition.
+- **Library complexity** — the MultiQC "Library complexity" table reports
+  **NRF** (non-redundant fraction, ideal >0.9), **PBC1** (>0.9) and **PBC2**
+  (>3). Low values flag PCR bottlenecking / over-amplified libraries — a
+  complement to Picard's duplication rate.
+- **Fingerprint** — `results/qc/fingerprint/` (and MultiQC): a strongly
+  bowed cumulative curve = good signal concentration; a near-diagonal curve =
+  little enrichment over background.
+- **Replicate PCA / correlation** (`results/diffacc/PCA_plot.pdf`,
+  `sample_correlation_heatmap.pdf`) — replicates should cluster by condition.
+
+> **Worked QC example (this pipeline on Buenrostro GSE47753).** Running the
+> included 13-library dataset makes the value of these metrics concrete: the
+> 500-cell GM12878 and later CD4 time-points score FRiP ≈ 0.001, TSS enrichment
+> < 2 and a flat fragment distribution, whereas the 50k-cell GM12878 and
+> `cd4_day2_rep2` reach TSS enrichment 4–15 with clear nucleosome periodicity.
+> **These metrics agree with each other** — use them together to decide which
+> libraries to keep before interpreting differential results.
 
 ## 12. Step-by-step tutorial (worked example)
 
@@ -398,6 +442,11 @@ BINDetect output ranks TFs by differential binding between your conditions.
   (§4). The rest of the pipeline is unaffected.
 - **Few or no consensus peaks** — lower `peaks.consensus_min_overlap`, check
   FRiP/TSS QC; low-complexity libraries yield few reproducible peaks.
+- **MACS3 wants to re-call peaks after upgrading** — the default `macs3_extra`
+  no longer passes `-B` (it wrote multi-GB pileup bedGraphs nothing consumes;
+  the narrowPeak output is unchanged). Snakemake sees the changed params and
+  re-runs MACS3. To keep existing peaks on a resumed run, add
+  `--rerun-triggers mtime`. Re-enable pileups by putting `-B` back in config.
 - **Re-run after editing config** — `snakemake --use-conda --cores 16 -R $(snakemake --list-params-changes)` or simply target the affected outputs.
 
 ## 14. References
@@ -420,12 +469,56 @@ BINDetect output ranks TFs by differential binding between your conditions.
 16. Ewels P, Magnusson M, Lundin S, Käller M. *MultiQC: summarize analysis results for multiple tools and samples in a single report.* **Bioinformatics** 2016;32:3047–3048.
 17. Mölder F, Jablonski KP, Letcher B, et al. *Sustainable data analysis with Snakemake.* **F1000Research** 2021;10:33.
 18. Li H, Handsaker B, Wysoker A, et al. *The Sequence Alignment/Map format and SAMtools.* **Bioinformatics** 2009;25:2078–2079.
+19. Wu T, Hu E, Xu S, et al. *clusterProfiler 4.0: A universal enrichment tool for interpreting omics data.* **The Innovation** 2021;2:100141. (GO/KEGG over-representation.)
+
+## 15. Downstream, tertiary analysis & scientific recommendations
+
+Everything below runs from the same config and the same real data
+(`ATAC-PRJNA207663_GSE47753`). Each stage is a switch in `config.yaml`.
+
+**What now ships end-to-end**
+
+| Layer | Output | Enable |
+|-------|--------|--------|
+| Differential figures | volcano, MA (ashr-shrunken), PCA + scree, sample correlation & distance heatmaps, top-DA-peak z-score heatmap | `diffacc.enabled` |
+| Functional enrichment | clusterProfiler GO (BP/MF) + KEGG dot-plots + tables of genes near up/down peaks | `functional_enrichment.enabled` (needs `annotation.enabled`) |
+| Motif deviations | chromVAR variability plot + top-variable-TF deviation heatmap | `chromvar.enabled` |
+| ENCODE QC | NRF/PBC1/PBC2, deepTools fingerprint, fragment/nucleosome overlay, TSS metagene heatmap + numeric score | `qc.library_complexity` / `qc.fingerprint` / `report.enabled` |
+
+All figures use one colour-blind-safe theme (`workflow/scripts/atac_theme.R`),
+export **vector PDF + PNG**, and the headline ones are folded into MultiQC.
+
+**Scientific recommendations (be critical of your own data)**
+
+1. **Gate samples on QC before differential testing.** Combine FRiP (>0.2),
+   TSS enrichment (>5–7), NRF/PBC and a clean nucleosome ladder — they agree.
+   In the bundled dataset the 500-cell and late CD4 libraries fail all four and
+   should be dropped or interpreted with heavy caution.
+2. **Model known batches.** If `samples.tsv` carries a batch/donor column, set
+   `diffacc.design: "~batch + condition"` — the DESeq2 script honours any
+   formula whose terms exist in the sheet. Shrunken LFCs (`lfcShrink`, ashr) are
+   used for ranking/MA/volcano so weakly-supported peaks don't dominate.
+3. **Consensus strategy.** The default keeps peaks seen in ≥2 samples across the
+   whole cohort. For many heterogeneous groups, consider building consensus
+   *within condition* first (or an IDR step) to avoid one large group dominating.
+4. **Signal normalisation.** bigWigs are CPM; for cross-sample browser
+   comparisons `--normalizeUsing RPGC` (1× genome coverage) is often preferable —
+   change it in `coverage.smk`.
+5. **Genrich vs MACS3.** Both are produced; treat Genrich (per-condition,
+   replicate-aware) as the reproducible cross-check on the per-sample MACS3 set.
+6. **Rat (rn7)** has no ENCODE blacklist — supply one via `genome.blacklist` or
+   expect a few artefact peaks.
+
+**Natural extensions** (not yet wired): per-locus genome-browser panels
+(pyGenomeTracks) for top DA peaks, IDR-based reproducible peaks, and
+motif→footprint integration (enable `footprinting` with a JASPAR/MEME db).
 
 ---
 
 *Built for reproducible bulk ATAC-seq on Ubuntu/Linux with Snakemake, conda,
-Python and R. Verified by Snakemake DAG dry-run (87-job full workflow) plus
-unit tests of the consensus and TSS helper scripts.*
+Python and R. Verified by Snakemake DAG dry-run (95-job full workflow, all
+stages enabled) and by running the new figure/QC scripts on real Buenrostro
+GSE47753 data.*
 
 ---
 

@@ -8,7 +8,7 @@
 rule consensus_peaks:
     input:
         peaks=expand(
-            f"{RESULTS}/peaks/macs3/{{s}}_peaks.narrowPeak", s=SAMPLES
+            f"{PROCESSED}/peaks/macs3/{{s}}_peaks.narrowPeak", s=SAMPLES
         ),
         chrom=f"{REF}/chrom.sizes",
     output:

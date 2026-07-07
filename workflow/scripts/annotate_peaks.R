@@ -35,6 +35,15 @@ if (nzchar(opt$txdb) && requireNamespace(opt$txdb, quietly = TRUE)) {
   txdb <- suppressWarnings(makeTxDbFromGFF(opt$gtf, format = "gtf"))
 }
 
+# Harmonise chromosome naming between peaks and the TxDb. The pipeline's peaks
+# use the genome's native names (e.g. Ensembl "1"), but a UCSC TxDb package uses
+# "chr1"; without this, no peak overlaps any feature.
+suppressWarnings({
+  peaks <- GenomeInfoDb::keepStandardChromosomes(peaks, pruning.mode = "coarse")
+  try(GenomeInfoDb::seqlevelsStyle(peaks) <-
+        GenomeInfoDb::seqlevelsStyle(txdb)[1], silent = TRUE)
+})
+
 anno <- annotatePeak(
   peaks, TxDb = txdb,
   tssRegion = c(-opt$tss_up, opt$tss_down),

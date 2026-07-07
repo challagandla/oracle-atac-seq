@@ -11,9 +11,9 @@
 
 rule filter_bam:
     input:
-        bam=f"{RESULTS}/aligned/{{sample}}.sorted.bam",
+        bam=f"{PROCESSED}/aligned/{{sample}}.sorted.bam",
     output:
-        bam=temp(f"{RESULTS}/filtered/{{sample}}.namefilt.bam"),
+        bam=temp(f"{PROCESSED}/filtered/{{sample}}.namefilt.bam"),
     params:
         mapq=config["filtering"]["min_mapq"],
         proper="-f 2" if config["filtering"]["keep_proper_pairs"] else "",
@@ -33,10 +33,10 @@ rule filter_bam:
 
 rule remove_mito:
     input:
-        f"{RESULTS}/filtered/{{sample}}.namefilt.bam",
+        f"{PROCESSED}/filtered/{{sample}}.namefilt.bam",
     output:
-        bam=temp(f"{RESULTS}/filtered/{{sample}}.nomito.bam"),
-        idx=temp(f"{RESULTS}/filtered/{{sample}}.nomito.bam.bai"),
+        bam=temp(f"{PROCESSED}/filtered/{{sample}}.nomito.bam"),
+        idx=temp(f"{PROCESSED}/filtered/{{sample}}.nomito.bam.bai"),
     params:
         do_remove=config["filtering"]["remove_mito"],
     threads: config["resources"]["sort_threads"]
@@ -60,10 +60,10 @@ rule remove_mito:
 
 rule mark_duplicates:
     input:
-        f"{RESULTS}/filtered/{{sample}}.nomito.bam",
+        f"{PROCESSED}/filtered/{{sample}}.nomito.bam",
     output:
-        bam=temp(f"{RESULTS}/filtered/{{sample}}.dedup.bam"),
-        metrics=f"{RESULTS}/qc/picard/{{sample}}.dup_metrics.txt",
+        bam=temp(f"{PROCESSED}/filtered/{{sample}}.dedup.bam"),
+        metrics=f"{PROCESSED}/qc/picard/{{sample}}.dup_metrics.txt",
     params:
         do_remove="true" if config["filtering"]["remove_duplicates"] else "false",
     log:
@@ -81,11 +81,11 @@ rule mark_duplicates:
 
 rule remove_blacklist:
     input:
-        bam=f"{RESULTS}/filtered/{{sample}}.dedup.bam",
+        bam=f"{PROCESSED}/filtered/{{sample}}.dedup.bam",
         blacklist=blacklist_bed() if blacklist_bed() else [],
     output:
-        bam=f"{RESULTS}/filtered/{{sample}}.filtered.bam",
-        bai=f"{RESULTS}/filtered/{{sample}}.filtered.bam.bai",
+        bam=f"{PROCESSED}/filtered/{{sample}}.filtered.bam",
+        bai=f"{PROCESSED}/filtered/{{sample}}.filtered.bam.bai",
     params:
         do_remove=config["filtering"]["remove_blacklist"] and bool(blacklist_bed()),
         bl=blacklist_bed(),
@@ -109,12 +109,14 @@ rule remove_blacklist:
 # Tn5-shifted, name-sorted BAM and a BEDPE of cut sites for MACS3/Genrich.
 rule tn5_shift:
     input:
-        bam=f"{RESULTS}/filtered/{{sample}}.filtered.bam",
+        bam=f"{PROCESSED}/filtered/{{sample}}.filtered.bam",
     output:
-        bam=f"{RESULTS}/shifted/{{sample}}.shifted.bam",
-        bai=f"{RESULTS}/shifted/{{sample}}.shifted.bam.bai",
+        bam=f"{PROCESSED}/shifted/{{sample}}.shifted.bam",
+        bai=f"{PROCESSED}/shifted/{{sample}}.shifted.bam.bai",
     params:
         do_shift=config["filtering"]["tn5_shift"],
+        chunk=config["filtering"].get("tn5_shift_genome_chunk_length", 50000000),
+        tmpdir=lambda wc: f"{PROCESSED}/shifted/_tmp_{wc.sample}",
     threads: config["resources"]["sort_threads"]
     log:
         f"{LOGS}/filter/{{sample}}.tn5shift.log",
@@ -122,13 +124,21 @@ rule tn5_shift:
         "../envs/deeptools.yaml"
     shell:
         r"""
-        mkdir -p $(dirname {output.bam})
+        mkdir -p $(dirname {output.bam}) {params.tmpdir}
         if [ "{params.do_shift}" = "True" ]; then
+            rm -rf {params.tmpdir}/deeptools_tmp
+            mkdir -p {params.tmpdir}/deeptools_tmp
+            export TMPDIR="{params.tmpdir}/deeptools_tmp"
+            export TMP="$TMPDIR"
+            export TEMP="$TMPDIR"
+            ulimit -n 65536 || true
             # deepTools alignmentSieve applies the canonical +4/-5 Tn5 shift.
             alignmentSieve -b {input.bam} -o {output.bam}.tmp \
-                --ATACshift -p {threads} 2> {log}
+                --ATACshift --genomeChunkLength {params.chunk} \
+                -p {threads} 2> {log}
             samtools sort -@ {threads} -o {output.bam} {output.bam}.tmp 2>> {log}
             rm -f {output.bam}.tmp
+            rm -rf {params.tmpdir}
         else
             cp {input.bam} {output.bam}
         fi

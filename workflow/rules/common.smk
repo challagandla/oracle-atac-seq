@@ -8,9 +8,11 @@ import pandas as pd
 # -----------------------------------------------------------------------------
 # Output directory layout
 # -----------------------------------------------------------------------------
-RESULTS = "results"
-LOGS = "logs"
-REF = "resources/reference"
+RESULTS = config.get("results_dir", "results")
+RAW = config.get("raw_dir") or f"{RESULTS}/fastq"
+PROCESSED = config.get("processed_dir") or RESULTS
+LOGS = config.get("logs_dir", "logs")
+REF = config.get("reference_dir", "resources/reference")
 
 # -----------------------------------------------------------------------------
 # Sample sheet
@@ -43,10 +45,9 @@ def sra_accession(sample):
 def raw_fastqs(sample):
     """Return (R1, R2) FASTQ paths for a sample, whether local or downloaded."""
     if is_sra(sample):
-        acc = sra_accession(sample)
         return (
-            f"{RESULTS}/fastq/{sample}_R1.fastq.gz",
-            f"{RESULTS}/fastq/{sample}_R2.fastq.gz",
+            f"{RAW}/{sample}_R1.fastq.gz",
+            f"{RAW}/{sample}_R2.fastq.gz",
         )
     row = samples.loc[sample]
     return (row["fq1"], row["fq2"])
@@ -186,22 +187,34 @@ def collect_final_outputs():
     out = []
 
     # Always: per-sample filtered BAMs, peaks, bigWigs, and the MultiQC report.
-    out += expand(f"{RESULTS}/filtered/{{s}}.filtered.bam", s=SAMPLES)
-    out += expand(f"{RESULTS}/peaks/macs3/{{s}}_peaks.narrowPeak", s=SAMPLES)
-    out += expand(f"{RESULTS}/coverage/{{s}}.cpm.bw", s=SAMPLES)
+    out += expand(f"{PROCESSED}/filtered/{{s}}.filtered.bam", s=SAMPLES)
+    out += expand(f"{PROCESSED}/peaks/macs3/{{s}}_peaks.narrowPeak", s=SAMPLES)
+    out += expand(f"{PROCESSED}/coverage/{{s}}.cpm.bw", s=SAMPLES)
     out += [f"{RESULTS}/qc/multiqc_report.html"]
     out += [f"{RESULTS}/consensus/consensus_peaks.bed"]
     out += [f"{RESULTS}/counts/consensus_counts.tsv"]
 
     if config["peaks"].get("run_genrich", False):
-        out += expand(f"{RESULTS}/peaks/genrich/{{c}}.narrowPeak", c=conditions())
+        out += expand(f"{PROCESSED}/peaks/genrich/{{c}}.narrowPeak", c=conditions())
 
     if config["diffacc"].get("enabled", False):
         out += [f"{RESULTS}/diffacc/differential_accessibility.tsv"]
-        out += [f"{RESULTS}/diffacc/MA_plot.pdf"]
+        # Publication figure suite (volcano, MA, PCA, correlation/distance, DA
+        # heatmap, scree) produced by the DESeq2 rule.
+        out += expand(
+            f"{RESULTS}/diffacc/{{f}}.pdf",
+            f=["MA_plot", "volcano_plot", "PCA_plot", "scree_plot",
+               "sample_correlation_heatmap", "sample_distance_heatmap",
+               "differential_peaks_heatmap"],
+        )
 
     if config["annotation"].get("enabled", False):
         out += [f"{RESULTS}/annotation/consensus_peaks.annotated.tsv"]
+
+    if config.get("functional_enrichment", {}).get("enabled", False) and \
+            config["annotation"].get("enabled", False) and \
+            config["diffacc"].get("enabled", False):
+        out += [f"{RESULTS}/enrichment/enrichment_dotplots.pdf"]
 
     if config["motif"].get("enabled", False):
         out += [f"{RESULTS}/motif/up/homerResults.html"]
@@ -212,5 +225,9 @@ def collect_final_outputs():
 
     if config["chromvar"].get("enabled", False):
         out += [f"{RESULTS}/chromvar/chromvar_deviations.tsv"]
+        out += [f"{RESULTS}/chromvar/chromvar_variability.pdf"]
+
+    # ENCODE QC completeness + aggregate publication figures (report.smk).
+    out += report_outputs()
 
     return out

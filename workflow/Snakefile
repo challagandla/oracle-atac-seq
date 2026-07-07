@@ -50,6 +50,10 @@ include: "rules/annotate.smk"     # ChIPseeker annotation
 include: "rules/motif.smk"        # HOMER motif enrichment
 include: "rules/footprint.smk"    # TOBIAS footprinting (optional)
 include: "rules/chromvar.smk"     # chromVAR deviations (optional)
+include: "rules/enrich.smk"       # GO/KEGG functional enrichment of DA genes
+
+# ---- QC completeness + publication figures ----------------------------------
+include: "rules/report.smk"       # complexity, fingerprint, TSS metagene, figures
 
 # ---- aggregate report --------------------------------------------------------
 include: "rules/multiqc.smk"

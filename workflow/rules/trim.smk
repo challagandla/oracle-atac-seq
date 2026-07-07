@@ -10,10 +10,10 @@ rule fastp:
         r1=lambda wc: raw_fastqs(wc.sample)[0],
         r2=lambda wc: raw_fastqs(wc.sample)[1],
     output:
-        r1=f"{RESULTS}/trimmed/{{sample}}_R1.trimmed.fastq.gz",
-        r2=f"{RESULTS}/trimmed/{{sample}}_R2.trimmed.fastq.gz",
-        json=f"{RESULTS}/qc/fastp/{{sample}}.fastp.json",
-        html=f"{RESULTS}/qc/fastp/{{sample}}.fastp.html",
+        r1=f"{PROCESSED}/trimmed/{{sample}}_R1.trimmed.fastq.gz",
+        r2=f"{PROCESSED}/trimmed/{{sample}}_R2.trimmed.fastq.gz",
+        json=f"{PROCESSED}/qc/fastp/{{sample}}.fastp.json",
+        html=f"{PROCESSED}/qc/fastp/{{sample}}.fastp.html",
     params:
         enabled=config["trimming"]["enabled"],
         extra=config["trimming"]["extra"],

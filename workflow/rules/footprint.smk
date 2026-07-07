@@ -9,7 +9,7 @@
 rule tobias_merge_condition:
     input:
         bams=lambda wc: expand(
-            f"{RESULTS}/shifted/{{s}}.shifted.bam",
+            f"{PROCESSED}/shifted/{{s}}.shifted.bam",
             s=samples_in_condition(wc.cond),
         ),
     output:

@@ -9,6 +9,45 @@
 # Sample sheet (TSV). See config/samples.tsv for the format.
 samples: "config/samples.tsv"
 
+# Optional run directories. Leave these defaults for normal runs. Override them
+# for isolated smoke tests or multiple analyses from the same checkout. Leave
+# raw_dir/processed_dir blank to derive them from results_dir and preserve the
+# historical single-results-tree layout.
+results_dir: "results"
+raw_dir: ""
+processed_dir: ""
+logs_dir: "logs"
+reference_dir: "resources/reference"
+
+# SRA download options. Set max_spots to a positive integer for small real-data
+# smoke tests; full production downloads use prefetch + fasterq-dump.
+sra:
+  max_spots: 0
+  max_size: "100G"
+
+# QC controls. Production defaults run the full ATAC QC metrics. Small smoke
+# tests can disable or bound expensive deepTools summaries while keeping target
+# files and MultiQC inputs present.
+qc:
+  fragment_sizes:
+    enabled: true
+  tss:
+    enabled: true
+    max_regions: 0
+  # ENCODE library-complexity metrics (NRF / PBC1 / PBC2) from the pre-dedup BAM.
+  library_complexity: true
+  # deepTools fingerprint (signal-to-noise across all libraries).
+  fingerprint: true
+
+# -----------------------------------------------------------------------------
+# Report / publication figures
+# -----------------------------------------------------------------------------
+# Aggregate, cross-sample figures (fragment-size overlay, TSS metagene heatmap +
+# profile + numeric enrichment score). Vector PDFs land in results/figures and
+# are also folded into the single MultiQC report. Disable for cheap smoke tests.
+report:
+  enabled: true
+
 # -----------------------------------------------------------------------------
 # Reference genome
 # -----------------------------------------------------------------------------
@@ -71,6 +110,10 @@ filtering:
   remove_duplicates: true   # Picard MarkDuplicates + remove
   # Tn5 shift: +4 bp on + strand, -5 bp on - strand (Buenrostro et al. 2013)
   tn5_shift: true
+  # deepTools alignmentSieve chunks the genome and then concatenates temporary
+  # BAMs. Keep chunks large enough for full human ATAC libraries so it does not
+  # exceed file-descriptor limits on production runs.
+  tn5_shift_genome_chunk_length: 50000000
 
 # -----------------------------------------------------------------------------
 # Peak calling
@@ -81,7 +124,13 @@ peaks:
   caller: "macs3"
   run_genrich: true
   macs3_qvalue: 0.01
-  macs3_extra: "--nomodel --shift -75 --extsize 150 -B --keep-dup all"
+  # --nomodel --shift -75 --extsize 150 is the de-facto ATAC standard (each read
+  # end is a Tn5 cut, piled up into a 150 bp window). --keep-dup all is safe here
+  # because duplicates are already removed upstream (filtering.remove_duplicates).
+  # NOTE: -B/--bedgraph is intentionally omitted — it writes multi-GB pileup
+  # bedGraphs per sample that nothing downstream consumes (CPM bigWigs come from
+  # deepTools in coverage.smk). Add "-B" back only if you need MACS pileups.
+  macs3_extra: "--nomodel --shift -75 --extsize 150 --keep-dup all"
   genrich_extra: "-j -r -e chrM -q 0.05"   # -j = ATAC mode
   # Consensus peak set across replicates/groups:
   consensus_min_overlap: 2   # a peak must appear in >= N samples of a group
@@ -104,6 +153,16 @@ annotation:
   enabled: true             # ChIPseeker peak annotation (needs matching TxDb/GTF)
   tss_upstream: 3000
   tss_downstream: 3000
+
+# GO / KEGG functional enrichment of genes near differentially-accessible peaks
+# (clusterProfiler). Needs annotation.enabled + diffacc.enabled + a matching
+# OrgDb (installed with the r.yaml genome data packages).
+functional_enrichment:
+  enabled: true
+  ontologies: ["BP", "MF"]  # GO sub-ontologies to test (BP/MF/CC)
+  kegg: true                # also test KEGG pathways
+  qvalue: 0.05
+  top_n: 20                 # terms shown per dotplot
 
 motif:
   enabled: true             # HOMER de novo + known motif enrichment on diff peaks
