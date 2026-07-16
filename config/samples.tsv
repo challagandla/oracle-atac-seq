@@ -1,14 +1,18 @@
-sample	condition	replicate	fq1	fq2	sra
+sample	condition	replicate	fq1	fq2	sra	include
 # -----------------------------------------------------------------------------
-# One row per sample (per replicate). Tab-separated. Lines starting with # are
-# ignored. Required column: `sample` (unique). `condition` and `replicate` drive
-# grouping and the differential design. Provide EITHER fq1+fq2 (local paired
-# FASTQs) OR an `sra` accession (SRR/ERR/DRR) to download. Leave the other blank.
+# Tracked template only. Copy it to config/samples.project.tsv before adding
+# project records; that copy is ignored by Git.
+#
+# The first six columns are required; include is optional. Sample and condition
+# IDs must start with a letter or digit and then contain only letters, digits,
+# dots, underscores, or hyphens: ^[A-Za-z0-9][A-Za-z0-9._-]*$
+# One row represents one biological library. Provide either fq1 plus fq2 or one
+# SRR/ERR/DRR run accession in sra, never both. Lines beginning with # are ignored.
 # -----------------------------------------------------------------------------
 # Example: local paired-end FASTQs
-ctrl_rep1	control	1	data/fastq/ctrl_rep1_R1.fastq.gz	data/fastq/ctrl_rep1_R2.fastq.gz
-ctrl_rep2	control	2	data/fastq/ctrl_rep2_R1.fastq.gz	data/fastq/ctrl_rep2_R2.fastq.gz
-treat_rep1	treatment	1	data/fastq/treat_rep1_R1.fastq.gz	data/fastq/treat_rep1_R2.fastq.gz
-treat_rep2	treatment	2	data/fastq/treat_rep2_R1.fastq.gz	data/fastq/treat_rep2_R2.fastq.gz
+control_rep1	control	1	data/fastq/control_rep1_R1.fastq.gz	data/fastq/control_rep1_R2.fastq.gz		true
+control_rep2	control	2	data/fastq/control_rep2_R1.fastq.gz	data/fastq/control_rep2_R2.fastq.gz		true
+treatment_rep1	treatment	1	data/fastq/treatment_rep1_R1.fastq.gz	data/fastq/treatment_rep1_R2.fastq.gz		true
+treatment_rep2	treatment	2	data/fastq/treatment_rep2_R1.fastq.gz	data/fastq/treatment_rep2_R2.fastq.gz		true
 # Example: download from SRA instead (leave fq1/fq2 blank, fill sra)
-# gm12878_rep1	control	1			SRR891268
+# public_rep1	control	1			SRR000000	true

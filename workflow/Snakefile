@@ -2,19 +2,20 @@
 # ATAC-seq end-to-end Snakemake workflow
 # =============================================================================
 # Full-length (bulk) paired-end ATAC-seq: QC -> trim -> align -> filter ->
-# Tn5 shift -> peak calling (MACS3 + Genrich) -> consensus peaks -> counts ->
-# differential accessibility (DESeq2) -> annotation -> motif (HOMER) ->
-# optional TF footprinting (TOBIAS) / chromVAR -> MultiQC.
+# peak calling (MACS3 + Genrich) -> consensus peaks -> counts -> differential
+# accessibility (DESeq2) -> annotation -> motif (HOMER) -> optional TF
+# footprinting (TOBIAS) / chromVAR -> MultiQC. A separate Tn5-shifted cut-site
+# track supports TSS QC; peak callers use the unshifted fragment BAM.
 #
 # Genome-agnostic: human (hg38), mouse (mm39/mm10), rat (rn7), or custom.
 # Input: local paired FASTQs and/or SRA accessions (auto-detected per sample).
 #
 # Usage:
-#   snakemake -n                                  # dry run (DAG preview)
-#   snakemake --use-conda --cores 16              # full run
-#   snakemake --use-conda --cores 16 multiqc      # just QC report
+#   bash run.sh --dry-run                         # dry run (DAG preview)
+#   bash run.sh --cores 16                        # full run
+#   bash run.sh --cores 16 qc_review              # outcome-blind QC report
 #
-# See README.md for the complete tutorial.
+# See TUTORIAL.md for the complete beginner-to-advanced tutorial.
 # =============================================================================
 
 from snakemake.utils import min_version
@@ -35,8 +36,8 @@ include: "rules/refs.smk"
 include: "rules/download.smk"     # SRA -> FASTQ (only for sra samples)
 include: "rules/trim.smk"         # fastp adapter/quality trimming
 include: "rules/align.smk"        # bowtie2 -> sorted BAM
-include: "rules/filter.smk"       # MAPQ, mito, dup, blacklist, Tn5 shift
-include: "rules/qc.smk"           # FastQC, ATACseqQC metrics, TSS, FRiP, fraglen
+include: "rules/filter.smk"       # MAPQ, mito, dup, blacklist + shifted QC BAM
+include: "rules/qc.smk"           # FastQC, ATAC-specific metrics, TSS, FRiP, fraglen
 
 # ---- peaks, signal, quantification ------------------------------------------
 include: "rules/peaks.smk"        # MACS3 + Genrich
@@ -50,6 +51,13 @@ include: "rules/annotate.smk"     # ChIPseeker annotation
 include: "rules/motif.smk"        # HOMER motif enrichment
 include: "rules/footprint.smk"    # TOBIAS footprinting (optional)
 include: "rules/chromvar.smk"     # chromVAR deviations (optional)
+include: "rules/enrich.smk"       # GO/KEGG functional enrichment of DA genes
+
+# ---- QC completeness + publication figures ----------------------------------
+include: "rules/report.smk"       # complexity, fingerprint, TSS metagene, figures
+
+# ---- run record --------------------------------------------------------------
+include: "rules/provenance.smk"   # effective config, samples, hashes, source state
 
 # ---- aggregate report --------------------------------------------------------
 include: "rules/multiqc.smk"

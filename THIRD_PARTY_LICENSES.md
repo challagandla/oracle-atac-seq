@@ -1,50 +1,79 @@
-# Third-party tools, data & licenses
+# Third-party software and data
 
-This pipeline's own code is **MIT** (see `LICENSE`). It **bundles no third-party source code and no
-reference data** — tools are installed via conda/bioconda and invoked as separate processes, and
-reference genomes/annotations/blacklists are downloaded by the user. (Files under `.test/` are tiny
-synthetic fixtures, e.g. a 9-byte `blacklist.bed`, not real data.) Invoking a separate program is not
-a derivative work, so the MIT license is unaffected by the licenses of the tools it orchestrates.
+The ORACLE workflow code in this repository is licensed under the
+[MIT License](LICENSE). The workflow installs and invokes separate
+third-party packages through Conda/Bioconda; it does not relicense those
+packages. Reference genomes, annotations, blacklists, and motif databases also
+retain their source-specific terms.
 
-## ⚠️ Restriction that affects commercial use
+This file is a practical inventory, not legal advice. Users distributing an
+environment, container, reference bundle, or derived database should review
+the exact package build and upstream terms themselves.
 
-| Dependency | Used by | Terms |
+## Main command-line packages
+
+The license labels below follow the metadata of the declared Conda/Bioconda
+packages used by the workflow at the time this file was reviewed. Environment
+specifications pin or constrain compatibility-sensitive tools; they are not
+immutable lock files.
+
+| Package | Workflow role | Package metadata license |
 |---|---|---|
-| **HOMER** | motif enrichment (`workflow/rules/motif.smk`, `workflow/envs/motif.yaml`) | HOMER is **freeware for academic / non-profit use, is not open-source, and may not be redistributed**; commercial use requires contacting the author (C. Benner, Salk/UCSD). The HOMER genome packages installed via `configureHomer.pl` are derived from **UCSC** data (academic/non-profit; commercial needs a UCSC license). |
+| fastp | read trimming and QC | MIT |
+| FastQC | raw-read QC | GPL-3.0-or-later |
+| MultiQC | combined report | GPL-3.0-or-later |
+| Bowtie2 | paired-end alignment | GPL-3.0-or-later |
+| SAMtools | BAM processing | MIT |
+| Picard | duplicate marking and metrics | MIT |
+| deepTools | Tn5 shifting, coverage, and QC plots | MIT |
+| MACS3 | peak calling | BSD-3-Clause |
+| Genrich | optional condition-level peak cross-check | MIT |
+| Subread/featureCounts | peak quantification | GPL-3.0-only |
+| SRA Toolkit | SRA download and conversion | Public Domain in package metadata; review bundled notices |
+| HOMER 4.11 | motif enrichment | GNU GPL v3 in the [Bioconda package metadata](https://anaconda.org/bioconda/homer) |
 
-HOMER is conda-installed and invoked (not bundled), so this repository redistributes nothing. But the
-**motif step is academic/non-commercial**. For commercial use, obtain HOMER/UCSC permissions or skip
-the HOMER motif step (peak calling, differential accessibility, and JASPAR-based footprinting do not
-depend on HOMER).
+HOMER is installed from the pinned Bioconda package and receives the configured
+FASTA directly. The workflow does not install or redistribute HOMER genome
+packages. If a different HOMER build or auxiliary dataset is used, review that
+build's metadata and data terms separately.
 
-## Tools (installed via conda; invoked, not bundled)
+The optional TOBIAS environment and all transitive dependencies retain their
+own licenses. Inspect the resolved Conda package metadata for the exact build
+used in a run.
 
-| Tool | License | Role |
-|---|---|---|
-| Bowtie2 / BWA | GPL-3.0 | alignment |
-| samtools | MIT | |
-| MACS3 | BSD-3-Clause | peak calling |
-| Genrich | MIT | peak calling |
-| deepTools | GPL-3.0 | coverage/QC |
-| Picard | MIT | dedup/metrics |
-| **HOMER** | **academic/non-profit; not redistributable** (see above) | motif enrichment |
-| sra-tools | Public Domain (US Gov) | SRA download |
-| JASPAR motif matrices | CC0 | footprinting input |
+## R, Bioconductor, and Python packages
 
-If footprinting is configured with a **MEME-format** motif database instead of JASPAR, note the **MEME
-Suite is free for non-commercial use only** (commercial use requires a license).
+DESeq2, ashr, ChIPseeker, clusterProfiler, chromVAR, JASPAR2020, genome
+annotation packages, pandas, pysam, plotting libraries, Snakemake, and their
+dependencies are installed as separate packages. Their licenses are not
+uniform. The authoritative record for a particular run is the resolved package
+metadata plus each upstream project's license.
 
-**R/Bioconductor:** DESeq2 (LGPL ≥3), ChIPseeker/annotation packages (Artistic-2.0/GPL), ggplot2 (MIT).
-Invoked within R; not redistributed.
+## JASPAR and other motif databases
 
-**On the GPL tools:** called as independent executables (Snakemake rules) — mere aggregation, not
-linking — so they impose no copyleft obligation on this MIT pipeline.
+[JASPAR CORE](https://jaspar.elixir.no/about/) data are provided under
+[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and require
+attribution. This applies to JASPAR motif data independently of the license of
+the R package or software used to read them.
 
-## Reference data (downloaded at run time; not redistributed)
-Genome/annotation from GENCODE/Ensembl (open); ENCODE blacklist from the Boyle Lab (open, cite). None
-are bundled in this repository.
+TOBIAS accepts user-supplied motif databases. A file's syntax does not determine
+its license: a motif file in MEME format does **not** acquire the MEME Suite
+software license merely because it uses that format. Cite and follow the terms
+of the database from which the motifs were obtained. The workflow does not run
+the MEME Suite.
 
-## Bottom line
-No code-incorporation conflict, no bundled code/data. The one operative constraint is **HOMER**
-(academic/non-profit; not redistributable; commercial use needs author/UCSC permission). Everything
-else is freely usable with citation.
+## Reference genomes, annotations, and blacklists
+
+Reference data are downloaded or supplied by the user and are not covered by
+this repository's MIT license. Record and review the terms for the exact
+versions used, including:
+
+- Ensembl or another FASTA/GTF provider;
+- the Boyle Lab/ENCODE blacklist source;
+- TxDb, OrgDb, BSgenome, and related annotation data;
+- JASPAR or another motif collection;
+- GO and KEGG resources used for enrichment.
+
+Do not assume that a data resource is unrestricted because it can be downloaded
+automatically. Preserve required attribution and any version-specific notices
+with the analysis provenance.

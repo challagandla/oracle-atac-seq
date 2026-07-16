@@ -3,31 +3,50 @@
 # =============================================================================
 import os
 import re
+import shlex
+import sys
 import pandas as pd
 
 # -----------------------------------------------------------------------------
 # Output directory layout
 # -----------------------------------------------------------------------------
-RESULTS = "results"
-LOGS = "logs"
-REF = "resources/reference"
+RESULTS = config.get("results_dir", "results")
+RAW = config.get("raw_dir") or f"{RESULTS}/fastq"
+PROCESSED = config.get("processed_dir") or RESULTS
+LOGS = config.get("logs_dir", "logs")
+REF = config.get("reference_dir", "resources/reference")
 
 # -----------------------------------------------------------------------------
 # Sample sheet
 # -----------------------------------------------------------------------------
-samples = (
+samples_all = (
     pd.read_csv(
         config["samples"],
         sep="\t",
         dtype=str,
         comment="#",
     )
-    .set_index("sample", drop=False)
-    .sort_index()
 )
-samples = samples.fillna("")
+samples_all = samples_all.fillna("")
+
+# Validate the biological and configuration contract before Snakemake schedules
+# any work.  The optional include column is the deliberate QC-review gate:
+# excluded libraries remain documented in the sheet but do not enter the DAG.
+sys.path.insert(0, os.path.join(workflow.basedir, "scripts"))
+from validate_inputs import validate_config_and_samples  # noqa: E402
+
+samples = validate_config_and_samples(config, samples_all)
+samples = samples.set_index("sample", drop=False).sort_index()
 
 SAMPLES = list(samples["sample"])
+MITOCHONDRIAL_CONTIGS = tuple(config["filtering"]["mitochondrial_contigs"])
+
+
+def mitochondrial_contig_args(option):
+    """Return one safely quoted command-line option per configured contig."""
+    return " ".join(
+        f"{option} {shlex.quote(contig)}" for contig in MITOCHONDRIAL_CONTIGS
+    )
 
 
 def is_sra(sample):
@@ -43,13 +62,30 @@ def sra_accession(sample):
 def raw_fastqs(sample):
     """Return (R1, R2) FASTQ paths for a sample, whether local or downloaded."""
     if is_sra(sample):
-        acc = sra_accession(sample)
         return (
-            f"{RESULTS}/fastq/{sample}_R1.fastq.gz",
-            f"{RESULTS}/fastq/{sample}_R2.fastq.gz",
+            f"{RAW}/{sample}_R1.fastq.gz",
+            f"{RAW}/{sample}_R2.fastq.gz",
         )
     row = samples.loc[sample]
     return (row["fq1"], row["fq2"])
+
+
+SCRIPTS = "workflow/scripts"
+
+
+def script_inputs(*names):
+    """The scripts a rule runs, declared as inputs.
+
+    Snakemake tracks code changes for the `script:` and `run:` directives, but a
+    `shell:` line that happens to call `Rscript workflow/scripts/foo.R` is opaque
+    to it: editing foo.R leaves every output it produced looking up to date, and
+    the next run quietly keeps the stale figures. Listing the script here is what
+    makes `--rerun-triggers mtime` notice.
+
+    Pass every file the rule actually executes, including the ones the entry
+    point sources or imports (atac_theme.R, palette.py).
+    """
+    return [f"{SCRIPTS}/{n}" for n in names]
 
 
 def conditions():
@@ -85,7 +121,8 @@ GENOME_PRESETS = {
         "taxid": 9606,
         "effective_genome_size": 2913022398,
         "macs_gsize": "hs",
-        "blacklist_url": "https://github.com/Boyle-Lab/Blacklist/raw/master/lists/hg38-blacklist.v2.bed.gz",
+        "blacklist_url": "https://www.encodeproject.org/files/ENCFF356LFX/@@download/ENCFF356LFX.bed.gz",
+        "blacklist_md5": "393688b4f06c9ce26165d47433dd8c37",
         "txdb": "TxDb.Hsapiens.UCSC.hg38.knownGene",
         "orgdb": "org.Hs.eg.db",
         "homer_genome": "hg38",
@@ -98,7 +135,10 @@ GENOME_PRESETS = {
         "taxid": 10090,
         "effective_genome_size": 2654621783,
         "macs_gsize": "mm",
-        "blacklist_url": "https://github.com/Boyle-Lab/Blacklist/raw/master/lists/mm10-blacklist.v2.bed.gz",
+        # Boyle Lab publishes mm10, not mm39. Chromosome renaming is not a
+        # coordinate lift, so mm39 requires an assembly-matched user BED.
+        "blacklist_url": "",
+        "blacklist_md5": "",
         "txdb": "TxDb.Mmusculus.UCSC.mm39.refGene",
         "orgdb": "org.Mm.eg.db",
         "homer_genome": "mm39",
@@ -111,7 +151,8 @@ GENOME_PRESETS = {
         "taxid": 10090,
         "effective_genome_size": 2652783500,
         "macs_gsize": "mm",
-        "blacklist_url": "https://github.com/Boyle-Lab/Blacklist/raw/master/lists/mm10-blacklist.v2.bed.gz",
+        "blacklist_url": "https://www.encodeproject.org/files/ENCFF543DDX/@@download/ENCFF543DDX.bed.gz",
+        "blacklist_md5": "4d2d98597e8301eddf7bc7b6818e2142",
         "txdb": "TxDb.Mmusculus.UCSC.mm10.knownGene",
         "orgdb": "org.Mm.eg.db",
         "homer_genome": "mm10",
@@ -125,6 +166,7 @@ GENOME_PRESETS = {
         "effective_genome_size": 2626580772,
         "macs_gsize": "2.6e9",
         "blacklist_url": "",  # No official ENCODE blacklist for rn7; see README.
+        "blacklist_md5": "",
         "txdb": "TxDb.Rnorvegicus.UCSC.rn7.refGene",
         "orgdb": "org.Rn.eg.db",
         "homer_genome": "rn7",
@@ -167,16 +209,48 @@ def genome_gtf():
     return config["genome"]["gtf"] or f"{REF}/genes.gtf"
 
 
-def blacklist_bed():
+def blacklist_source():
+    """The blacklist as supplied: user-provided path, or the downloaded ENCODE BED.
+
+    This is the file *before* chromosome names are reconciled with the genome.
+    Nothing downstream should read it directly.
+    """
     if config["genome"]["blacklist"]:
         return config["genome"]["blacklist"]
     if GENOME.get("blacklist_url"):
-        return f"{REF}/blacklist.bed"
-    return ""   # no blacklist available -> filtering step is skipped
+        return f"{REF}/blacklist.raw.bed"
+    return ""
+
+
+def blacklist_bed():
+    """The blacklist actually used for filtering: named the way the genome is.
+
+    A user-supplied blacklist goes through the same harmonisation as a downloaded
+    one -- supplying your own file is not a promise that it uses your genome's
+    chromosome names.
+    """
+    if not config["filtering"].get("remove_blacklist", True):
+        return ""
+    if not blacklist_source():
+        return ""   # no blacklist available -> filtering step is skipped
+    # A distinct name: a user may legitimately point genome.blacklist at
+    # {reference_dir}/blacklist.bed, and a rule whose input is its own output
+    # is a cycle.
+    return f"{REF}/blacklist.harmonized.bed"
 
 
 def bowtie2_index_prefix():
     return f"{REF}/bowtie2/genome"
+
+
+def bowtie2_index_files():
+    suffix = "bt2l" if config.get("alignment", {}).get("large_index", False) else "bt2"
+    parts = ["1", "2", "3", "4", "rev.1", "rev.2"]
+    return [f"{bowtie2_index_prefix()}.{part}.{suffix}" for part in parts]
+
+
+def bowtie2_build_mode():
+    return "--large-index" if config.get("alignment", {}).get("large_index", False) else ""
 
 
 # -----------------------------------------------------------------------------
@@ -185,32 +259,66 @@ def bowtie2_index_prefix():
 def collect_final_outputs():
     out = []
 
-    # Always: per-sample filtered BAMs, peaks, bigWigs, and the MultiQC report.
-    out += expand(f"{RESULTS}/filtered/{{s}}.filtered.bam", s=SAMPLES)
-    out += expand(f"{RESULTS}/peaks/macs3/{{s}}_peaks.narrowPeak", s=SAMPLES)
-    out += expand(f"{RESULTS}/coverage/{{s}}.cpm.bw", s=SAMPLES)
+    # Always: per-sample filtered BAMs, peaks, bigWigs, outcome-blind QC review,
+    # and the final combined MultiQC report.
+    out += expand(f"{PROCESSED}/filtered/{{s}}.filtered.bam", s=SAMPLES)
+    out += expand(f"{PROCESSED}/peaks/macs3/{{s}}_peaks.narrowPeak", s=SAMPLES)
+    out += expand(f"{PROCESSED}/coverage/{{s}}.cpm.bw", s=SAMPLES)
+    out += expand(f"{PROCESSED}/coverage/{{s}}.cutsites.cpm.bw", s=SAMPLES)
+    out += [f"{RESULTS}/qc/qc_review_report.html"]
     out += [f"{RESULTS}/qc/multiqc_report.html"]
     out += [f"{RESULTS}/consensus/consensus_peaks.bed"]
     out += [f"{RESULTS}/counts/consensus_counts.tsv"]
 
     if config["peaks"].get("run_genrich", False):
-        out += expand(f"{RESULTS}/peaks/genrich/{{c}}.narrowPeak", c=conditions())
+        out += expand(f"{PROCESSED}/peaks/genrich/{{c}}.narrowPeak", c=conditions())
 
     if config["diffacc"].get("enabled", False):
-        out += [f"{RESULTS}/diffacc/differential_accessibility.tsv"]
-        out += [f"{RESULTS}/diffacc/MA_plot.pdf"]
+        out += [
+            f"{RESULTS}/diffacc/differential_accessibility.tsv",
+            f"{RESULTS}/diffacc/tested_peaks.bed",
+        ]
+        # Publication figure suite (volcano, MA, PCA, correlation/distance, DA
+        # heatmap, scree) produced by the DESeq2 rule.
+        out += expand(
+            f"{RESULTS}/diffacc/{{f}}.pdf",
+            f=["MA_plot", "volcano_plot", "PCA_plot", "scree_plot",
+               "sample_correlation_heatmap", "sample_distance_heatmap",
+               "differential_peaks_heatmap"],
+        )
 
     if config["annotation"].get("enabled", False):
         out += [f"{RESULTS}/annotation/consensus_peaks.annotated.tsv"]
+
+    if config.get("functional_enrichment", {}).get("enabled", False) and \
+            config["annotation"].get("enabled", False) and \
+            config["diffacc"].get("enabled", False):
+        out += [
+            f"{RESULTS}/enrichment/enrichment_dotplots.pdf",
+            f"{RESULTS}/enrichment/enrichment_status.tsv",
+            f"{RESULTS}/enrichment/tables",
+        ]
 
     if config["motif"].get("enabled", False):
         out += [f"{RESULTS}/motif/up/homerResults.html"]
         out += [f"{RESULTS}/motif/down/homerResults.html"]
 
     if config["footprinting"].get("enabled", False):
-        out += expand(f"{RESULTS}/footprint/{{c}}_footprints.bed", c=conditions())
+        out += [f"{RESULTS}/footprint/bindetect/bindetect_results.txt"]
+        out += [f"{RESULTS}/footprint/bindetect/bindetect_figures.pdf"]
 
     if config["chromvar"].get("enabled", False):
         out += [f"{RESULTS}/chromvar/chromvar_deviations.tsv"]
+        out += [f"{RESULTS}/chromvar/chromvar_variability.pdf"]
+
+    # ENCODE QC completeness + aggregate publication figures (report.smk).
+    out += report_outputs()
+
+    # Run record of what generated the results.
+    out += [f"{RESULTS}/provenance/run_manifest.json"]
+    out += [f"{RESULTS}/provenance/effective_config.yaml"]
+    out += [f"{RESULTS}/provenance/samples.tsv"]
+    out += [f"{RESULTS}/provenance/software_environments.sha256.tsv"]
+    out += [f"{RESULTS}/provenance/raw_inputs.sha256.tsv"]
 
     return out

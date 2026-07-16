@@ -1,441 +1,260 @@
-# ATAC-seq Snakemake Pipeline — Full-Length (Bulk) Paired-End
+# ORACLE ATAC-seq
 
-[![CI](https://github.com/challagandla/oracle-atacseq/actions/workflows/ci.yml/badge.svg)](https://github.com/challagandla/oracle-atacseq/actions/workflows/ci.yml)
+[![CI](https://github.com/challagandla/oracle-atac-seq/actions/workflows/ci.yml/badge.svg)](https://github.com/challagandla/oracle-atac-seq/actions/workflows/ci.yml)
 
-A reproducible, genome-agnostic Snakemake workflow for bulk ATAC-seq, built on
-current best practices from the most-cited methods literature. It takes raw
-paired-end FASTQs (or SRA accessions) all the way to differential chromatin
-accessibility, peak annotation, transcription-factor motif enrichment, and
-TF footprinting — with a single MultiQC report tying the QC together.
+ORACLE ATAC-seq is a Snakemake workflow for reproducible analysis of
+paired-end bulk ATAC-seq data. It starts from local FASTQ files or SRA run
+accessions and produces filtered alignments, accessibility tracks, peaks,
+quality-control reports, a consensus count matrix, differential-accessibility
+results, annotations, motifs, and optional transcription-factor analyses.
 
-Everything runs on Ubuntu/Linux with **Snakemake + conda (Python & R)**. Each
-step pins its own conda environment, so the only thing you install by hand is
-Snakemake itself.
+The workflow is **ENCODE-informed**, not a drop-in implementation of the
+official ENCODE ATAC-seq pipeline. In particular, it creates fixed-width peaks
+and requires within-condition replicate support; it does **not** implement IDR.
+Use the [official ENCODE pipeline](https://github.com/ENCODE-DCC/atac-seq-pipeline)
+when exact ENCODE processing or submission compliance is required.
 
-> **Scope.** This is for *bulk / full-length* ATAC-seq (the standard Buenrostro
-> assay), not single-cell ATAC. For scATAC use ArchR/Signac or the `scvi-tools`
-> PeakVI route.
+## Scope
 
----
+- Paired-end bulk ATAC-seq
+- Linux workstations, servers, and WSL2
+- Local FASTQs, SRA run accessions, or a mixture of both
+- Human, mouse, rat, or carefully configured custom references
+- Two-group and covariate-aware differential designs
 
-## Table of contents
+Single-cell ATAC-seq, single-end libraries, IDR, spike-in normalization, and
+clinical interpretation are outside the current scope.
 
-1. [What the pipeline does](#1-what-the-pipeline-does)
-2. [Method choices and why](#2-method-choices-and-why-the-citations)
-3. [Repository layout](#3-repository-layout)
-4. [Installation](#4-installation)
-5. [Quick start](#5-quick-start)
-6. [Configuring your run](#6-configuring-your-run)
-7. [Inputs: local FASTQs or SRA](#7-inputs-local-fastqs-or-sra)
-8. [Genomes: human, mouse, rat, custom](#8-genomes-human-mouse-rat-custom)
-9. [Running on a workstation or cluster](#9-running-on-a-workstation-or-cluster)
-10. [Understanding the outputs](#10-understanding-the-outputs)
-11. [Quality-control checklist](#11-quality-control-checklist-encode-thresholds)
-12. [Step-by-step tutorial (worked example)](#12-step-by-step-tutorial-worked-example)
-13. [Troubleshooting](#13-troubleshooting)
-14. [References](#14-references)
+## What the workflow does
 
----
-
-## 1. What the pipeline does
-
-```
-FASTQ (local or SRA)
-   │  fastp            adapter/quality trimming (Nextera/Tn5 auto-detect)
-   ▼
-Bowtie2  -X 2000       paired-end alignment, keep nucleosomal fragments
-   ▼
-Filtering              MAPQ≥30 · proper pairs · drop chrM · MarkDuplicates ·
-   │                   remove ENCODE blacklist regions
-   ▼
-Tn5 shift  (+4/−5)     base-pair-accurate cut sites (alignmentSieve --ATACshift)
-   ├─────────────► deepTools bamCoverage ─► CPM bigWig (IGV/UCSC tracks)
-   ▼
-Peak calling           MACS3 (per sample)  +  Genrich -j (per condition)
-   ▼
-Consensus peaks        merged, reproducible peak set (≥N samples)
-   ▼
-featureCounts          peak × sample fragment-count matrix
-   ▼
-DESeq2                 differential accessibility (+ PCA, MA, normalized counts)
-   ├─► ChIPseeker      genomic annotation + nearest gene
-   ├─► HOMER           motif enrichment on up/down peaks
-   ├─► TOBIAS          TF footprinting per condition (optional)
-   └─► chromVAR        per-sample motif accessibility deviations (optional)
-   ▼
-MultiQC                one HTML report: FastQC, fastp, Bowtie2, Picard,
-                       fragment sizes, TSS enrichment, FRiP, featureCounts
+```text
+FASTQ or SRA
+  -> FastQC and fastp
+  -> Bowtie2 paired-end alignment
+  -> proper-pair, MAPQ, mitochondrial, duplicate, and blacklist filtering
+  -> fragment-level and Tn5 cut-site CPM bigWigs
+  -> per-sample MACS3 peaks
+  -> fixed-width, within-condition replicate-supported consensus peaks
+  -> per-library Rsubread featureCounts and checked peak-by-sample matrix merge
+  -> DESeq2 differential accessibility
+  -> ChIPseeker annotation and clusterProfiler enrichment
+  -> HOMER motif enrichment
+  -> optional chromVAR and TOBIAS
+  -> MultiQC plus publication-oriented QC and differential figures
 ```
 
-## 2. Method choices and why (the citations)
+Genrich can also pool replicates within each condition as a secondary peak
+calling cross-check. The primary consensus/count matrix is built from
+per-sample MACS3 peaks.
 
-These selections track the most-cited ATAC-seq methods papers and the ENCODE
-ATAC-seq data standards. Full citations in [§14](#14-references).
+## Quick start
 
-| Step | Tool | Rationale |
-|------|------|-----------|
-| Trimming | **fastp** | Fast, auto-detects Nextera/Tn5 adapters for PE reads; single JSON for MultiQC (Chen et al. 2018). |
-| Alignment | **Bowtie2** `-X 2000` | ENCODE-standard ATAC aligner; the large insert ceiling retains mono-/di-nucleosomal fragments (Langmead & Salzberg 2012). |
-| Duplicate removal | **Picard MarkDuplicates** | ENCODE-standard; ATAC libraries are PCR-amplified and duplication-prone. |
-| Blacklist | **ENCODE blacklist v2** | Removing hyper-signal artifact regions is *the* single most impactful QC step (Amemiya et al. 2019). |
-| Tn5 shift | **deepTools `alignmentSieve --ATACshift`** | Canonical +4/−5 bp shift recentres reads on the Tn5 cut site (Buenrostro et al. 2013). |
-| Peaks (primary) | **MACS3** `--nomodel --shift -75 --extsize 150` | De-facto ATAC peak caller; treats each read end as a cut and builds a 150 bp pileup (Zhang et al. 2008; MACS3). |
-| Peaks (cross-check) | **Genrich** `-j` (ATAC mode) | Pools replicates, models the Tn5 cut, emits one reproducible peak list per group (Gaspar 2018). |
-| Quantification | **featureCounts** | Fast fragment counting over the consensus peak set (Liao et al. 2014). |
-| Differential | **DESeq2** | Robust negative-binomial model widely used for count-based accessibility (Love et al. 2014). |
-| Annotation | **ChIPseeker** | Standard peak→feature/gene annotation in Bioconductor (Yu et al. 2015). |
-| Motifs | **HOMER** | De-novo + known TF motif enrichment on differential peaks (Heinz et al. 2010). |
-| Footprinting | **TOBIAS** | Bias-corrected, differential TF footprinting from bulk ATAC (Bentsen et al. 2020). |
-| Motif deviations | **chromVAR** | Bias-corrected per-sample motif accessibility variability (Schep et al. 2017). |
-| Aggregate QC | **MultiQC** | One report across all tools (Ewels et al. 2016). |
-| Workflow engine | **Snakemake** | Reproducible, conda-isolated, scalable DAG execution (Mölder et al. 2021). |
-
-The overall design follows the widely-cited end-to-end guide *"From reads to
-insight: a hitchhiker's guide to ATAC-seq data analysis"* (Yan et al., *Genome
-Biology* 2020), and the ENCODE ATAC-seq processing standards.
-
-## 3. Repository layout
-
-```
-atacseq-snakemake/
-├── README.md                 ← this tutorial
-├── environment.yaml          ← creates the `atacseq-smk` env (Snakemake)
-├── config/
-│   ├── config.yaml           ← MAIN knobs: genome, filtering, peaks, design
-│   └── samples.tsv           ← your samples (one row per replicate)
-├── profiles/default/         ← run profile (cores, conda, retries)
-├── workflow/
-│   ├── Snakefile             ← includes all rule modules + target rule
-│   ├── rules/                ← one .smk per stage (refs, trim, align, …)
-│   ├── envs/                 ← per-stage conda environments (pinned)
-│   └── scripts/              ← Python + R helpers
-└── .test/                    ← tiny fixtures for a DAG smoke-test
-```
-
-## 4. Installation
-
-You need **conda** (Miniforge/Mambaforge recommended) on Linux/Ubuntu or WSL2.
+### 1. Clone and install
 
 ```bash
-# 1. Get the code
-cd atacseq-snakemake
-
-# 2. Create the controller environment (Snakemake itself)
-conda env create -f environment.yaml
-conda activate atacseq-smk
-
-# 3. Everything else is installed automatically per-rule on first run,
-#    because we pass --use-conda. No manual tool installs needed.
+git clone https://github.com/challagandla/oracle-atac-seq.git
+cd oracle-atac-seq
+bash setup.sh
 ```
 
-Two tool families need a **one-time external data install** (large genome
-packages, so not auto-installed):
+The setup script creates the small Snakemake runner environment and the
+rule-specific Conda environments. Shell activation is not required. Verify an
+existing installation with:
 
 ```bash
-# HOMER genome (for motif enrichment) — pick your build:
-#   after the motif env is created on first run, or in a manual homer env:
-configureHomer.pl -install hg38      # or mm39 / mm10 / rn7
-
-# Bioconductor TxDb/OrgDb/BSgenome (for ChIPseeker + chromVAR) — human example:
-#   add these to workflow/envs/r.yaml or install into that env:
-#   bioconductor-txdb.hsapiens.ucsc.hg38.knowngene
-#   bioconductor-org.hs.eg.db
-#   bioconductor-bsgenome.hsapiens.ucsc.hg38
+bash setup.sh --check
 ```
 
-If you skip those, the core pipeline (through peaks, consensus, counts, DESeq2)
-still runs; only annotation/motif/footprint/chromVAR need them.
+### 2. Create project configuration copies
 
-## 5. Quick start
+The tracked files are reusable templates. Copy them before entering project
+metadata or paths; never put project records into the tracked templates:
 
 ```bash
-conda activate atacseq-smk
-
-# 1. Edit config/samples.tsv  → list your FASTQs (or SRA accessions)
-# 2. Edit config/config.yaml  → set genome.build and the diffacc contrast
-# 3. Preview the plan (no compute):
-snakemake -n
-
-# 4. Run it (16 cores, auto-build conda envs):
-snakemake --use-conda --cores 16
-
-# …or just the QC report, or just up to peaks:
-snakemake --use-conda --cores 16 results/qc/multiqc_report.html
-snakemake --use-conda --cores 16 results/peaks/macs3/ctrl_rep1_peaks.narrowPeak
+cp config/samples.tsv config/samples.project.tsv
+cp config/project.example.yaml config/project_overrides.yaml
 ```
 
-## 6. Configuring your run
+Both copies are ignored by Git. Edit `config/samples.project.tsv`. Its first six
+columns are required; `include` is optional, and additional design columns such
+as `batch` or `donor` are allowed. A false `include` value keeps a library
+documented but excludes it from the analysis.
 
-Everything lives in `config/config.yaml`. The most important knobs:
+Both `sample` and `condition` must match
+`^[A-Za-z0-9][A-Za-z0-9._-]*$`: start with a letter or digit, followed only by
+letters, digits, dots, underscores, or hyphens.
 
-- **`genome.build`** — `human` | `mouse` | `mouse_mm10` | `rat` | `custom`.
-  Leave `fasta`/`gtf`/`blacklist` blank to auto-download from Ensembl, or set
-  local paths to skip downloads.
-- **`filtering`** — MAPQ cutoff, mito removal, dedup, blacklist, Tn5 shift. The
-  defaults are ENCODE-standard; you rarely need to change them.
-- **`peaks`** — MACS3 q-value/flags, whether to also run Genrich, and
-  `consensus_min_overlap` (how many samples must share a peak to keep it).
-- **`diffacc`** — the model. Set `design`, and `contrast: [factor, A, B]` to
-  test **A vs B** (log2FC > 0 means more open in A). The factor and any
-  covariates must be **column names in `samples.tsv`**.
-- **`motif` / `footprinting` / `chromvar` / `annotation`** — feature switches.
-  `footprinting` and `chromvar` are **off by default** (slow / need extra data).
+Local read paths must end in `.fastq`, `.fq`, `.fastq.gz`, or `.fq.gz`.
 
-## 7. Inputs: local FASTQs or SRA
+| sample | condition | replicate | fq1 | fq2 | sra | include |
+|---|---|---:|---|---|---|---|
+| control_r1 | control | 1 | data/control_r1_R1.fq.gz | data/control_r1_R2.fq.gz | | true |
+| control_r2 | control | 2 | data/control_r2_R1.fq.gz | data/control_r2_R2.fq.gz | | true |
+| treatment_r1 | treatment | 1 | data/treatment_r1_R1.fq.gz | data/treatment_r1_R2.fq.gz | | true |
+| treatment_r2 | treatment | 2 | data/treatment_r2_R1.fq.gz | data/treatment_r2_R2.fq.gz | | true |
 
-`config/samples.tsv` is tab-separated, one row per sample (per replicate):
+For SRA input, leave `fq1` and `fq2` empty and provide an SRR, ERR, or DRR run
+accession in `sra`. Each row must provide local paired FASTQs or one SRA run,
+never both.
 
-```
-sample      condition   replicate   fq1                         fq2                         sra
-ctrl_rep1   control     1           data/fastq/c1_R1.fq.gz      data/fastq/c1_R2.fq.gz
-ctrl_rep2   control     2           data/fastq/c2_R1.fq.gz      data/fastq/c2_R2.fq.gz
-treat_rep1  treatment   1           data/fastq/t1_R1.fq.gz      data/fastq/t1_R2.fq.gz
-treat_rep2  treatment   2           data/fastq/t2_R1.fq.gz      data/fastq/t2_R2.fq.gz
-# Or pull from SRA (leave fq1/fq2 blank, fill sra):
-gm12878_r1  control     1                                                                   SRR891268
-```
+### 3. Configure the analysis
 
-Mode is auto-detected per row: filled `fq1` → local; only `sra` → download via
-the SRA Toolkit. You can mix both in one sheet. Add extra columns (e.g.
-`donor`, `batch`) and reference them in the DESeq2 `design` to model covariates.
-
-## 8. Genomes: human, mouse, rat, custom
-
-Built-in presets ship the correct effective genome size, MACS `gsize`, ENCODE
-blacklist URL, and the R annotation package names:
-
-| build | assembly | blacklist | notes |
-|-------|----------|-----------|-------|
-| `human` | GRCh38 / hg38 | ENCODE v2 hg38 | default |
-| `mouse` | GRCm39 / mm39 | ENCODE v2 (mm10 lifted) | newest mouse |
-| `mouse_mm10` | GRCm38 / mm10 | ENCODE v2 mm10 | legacy mm10 annotations |
-| `rat` | mRatBN7.2 / rn7 | *(none official)* | see note below |
-| `custom` | your own | your own | fill `genome.custom.*` |
-
-**Rat note.** There is no official ENCODE blacklist for rn7. The pipeline
-detects this and simply skips blacklist filtering (a warning is logged). If you
-have a community blacklist BED, set `genome.blacklist` to its path and it will
-be used. For motif/annotation in rat, install `org.Rn.eg.db`,
-`TxDb.Rnorvegicus.UCSC.rn7.refGene`, and the matching BSgenome.
-
-## 9. Running on a workstation or cluster
-
-**Workstation** — use the bundled profile (cores/conda/retries preset):
-
-```bash
-snakemake --profile profiles/default
-```
-
-**Cluster (SLURM)** — copy the profile and add an executor. With Snakemake ≥8
-use `snakemake-executor-plugin-slurm`; on 7.x use a generic cluster profile:
-
-```bash
-# 7.x example
-snakemake --use-conda --jobs 100 \
-  --cluster "sbatch -c {threads} --mem={resources.mem_mb} -t 04:00:00" \
-  --default-resources mem_mb=16000
-```
-
-Per-rule threads come from `config.resources`; override any rule with
-`--set-threads bowtie2_align=24`.
-
-## 10. Understanding the outputs
-
-Everything lands under `results/`:
-
-```
-results/
-├── trimmed/                 fastp-trimmed FASTQs
-├── aligned/                 raw sorted BAMs (+ .bai)
-├── filtered/                *.filtered.bam  ← analysis-ready, deduped, no-blacklist
-├── shifted/                 *.shifted.bam   ← Tn5-shifted (used for peaks/signal)
-├── coverage/                *.cpm.bw        ← genome-browser tracks
-├── peaks/
-│   ├── macs3/               <sample>_peaks.narrowPeak  (per sample)
-│   └── genrich/             <condition>.narrowPeak     (per group)
-├── consensus/               consensus_peaks.bed / .saf
-├── counts/                  consensus_counts.tsv (peak × sample matrix)
-├── diffacc/                 differential_accessibility.tsv, MA_plot.pdf,
-│                            PCA_plot.pdf, up_peaks.bed, down_peaks.bed
-├── annotation/              consensus_peaks.annotated.tsv, feature_distribution.pdf
-├── motif/{up,down}/         HOMER homerResults.html (+ knownResults)
-├── footprint/               TOBIAS corrected tracks + BINDetect per condition
-├── chromvar/                chromvar_deviations.tsv, chromvar_variability.tsv
-└── qc/
-    └── multiqc_report.html  ← START HERE
-```
-
-The single most useful file is **`results/qc/multiqc_report.html`** — open it
-first. The key biological result is
-**`results/diffacc/differential_accessibility.tsv`** (columns: peak coords,
-`log2FoldChange`, `padj`, …), with the up/down BEDs feeding HOMER.
-
-## 11. Quality-control checklist (ENCODE thresholds)
-
-Check these in the MultiQC report before trusting downstream results:
-
-- **Alignment rate** > 80–95 % to the nuclear genome.
-- **Mitochondrial fraction** — high (>20–40 %) is common but wasteful; very
-  high suggests poor nuclei prep. (Removed by the pipeline regardless.)
-- **Fragment-size distribution** — must show the periodic ATAC pattern: a large
-  sub-147 bp nucleosome-free peak, then mono-/di-nucleosome bumps (~200/~400 bp).
-  A flat distribution = failed transposition.
-- **TSS enrichment** — sharp peak at the TSS; ENCODE flags <5 (hg38) as poor,
-  >7 as ideal. See `results/qc/tss/`.
-- **FRiP** (fraction of reads in peaks) — ENCODE recommends **> 0.2–0.3**.
-  See `results/qc/frip/`.
-- **Library complexity / duplication** — from Picard metrics; very high
-  duplication means an over-amplified, low-complexity library.
-- **Replicate PCA** (`results/diffacc/PCA_plot.pdf`) — replicates should cluster
-  by condition.
-
-## 12. Step-by-step tutorial (worked example)
-
-A complete public-data run (human GM12878 ATAC), end to end.
-
-**Step 1 — Set up the sample sheet** to pull two replicates from SRA. Edit
-`config/samples.tsv`:
-
-```
-sample        condition   replicate   fq1   fq2   sra
-gm12878_rep1  control     1                       SRR891268
-gm12878_rep2  control     2                       SRR891269
-```
-
-(For a *differential* test you need two conditions; here we just demo QC +
-peaks. Add a `treatment` group to exercise DESeq2.)
-
-**Step 2 — Point at the human genome.** In `config/config.yaml`:
+Edit `config/project_overrides.yaml`, set its sample-sheet path, and review at
+least:
 
 ```yaml
-genome:
-  build: "human"     # auto-downloads GRCh38 + hg38 blacklist on first run
+samples: "config/samples.project.tsv"
 ```
 
-**Step 3 — Preview the DAG** (no computation, catches config errors):
+Replace `my_project` in that copied overlay's five output/reference paths so
+each analysis starts in an isolated namespace.
 
-```bash
-snakemake -n
-```
+- `genome.build`, reference paths, and blacklist assembly
+- `diffacc.design` and `diffacc.contrast`
+- `peaks.consensus_min_replicates` and `peaks.consensus_peak_width`
+- optional annotation, enrichment, motif, chromVAR, and footprinting switches
+- CPU settings under `resources`
 
-You should see jobs for `sra_download`, `download_genome_fasta`,
-`bowtie2_build`, `fastp`, `bowtie2_align`, the filtering chain,
-`macs3_callpeak`, `consensus_peaks`, `featurecounts`, and `multiqc`.
-
-**Step 4 — Run the QC-and-peaks core** on 16 cores:
-
-```bash
-snakemake --use-conda --cores 16 \
-  results/qc/multiqc_report.html \
-  results/consensus/consensus_peaks.bed
-```
-
-First run spends time downloading the genome, building the Bowtie2 index, and
-creating conda envs; subsequent runs reuse all of it.
-
-**Step 5 — Inspect QC.** Open `results/qc/multiqc_report.html`. Confirm the
-fragment-size periodicity, TSS enrichment, and FRiP pass (§11). Load a
-`results/coverage/*.cpm.bw` track in IGV next to a housekeeping gene — you
-should see a sharp promoter peak.
-
-**Step 6 — Differential accessibility.** With a two-condition sheet, set the
-contrast in `config.yaml`:
+Positive differential log2 fold change means greater accessibility in the
+contrast numerator:
 
 ```yaml
 diffacc:
-  enabled: true
   design: "~condition"
   contrast: ["condition", "treatment", "control"]
 ```
 
-then:
+Use biological replicates. The workflow requires at least two included
+libraries per condition for differential analysis; three or more are strongly
+preferred. Preflight also requires every included condition to have at least
+`peaks.consensus_min_replicates` libraries so each condition can contribute
+condition-specific consensus peaks.
+
+For `genome.build: "custom"`, provide local FASTA and GTF paths or a complete
+Ensembl species/release/assembly tuple. Also configure the effective and MACS
+genome sizes. At least 95% of GTF gene TSSs must map within the configured
+FASTA after conservative name reconciliation. Enrichment requires a matching taxonomic ID and OrgDb; chromVAR
+requires that taxonomic ID and a matching BSgenome. Add the named R packages to
+`workflow/envs/r.yaml`; annotation can use the configured TxDb or GTF fallback.
+
+### 4. Preview, review QC, then run
 
 ```bash
-snakemake --use-conda --cores 16 results/diffacc/differential_accessibility.tsv
+bash run.sh --dry-run \
+  --configfile config/config.yaml config/project_overrides.yaml
+bash run.sh --cores 8 qc_review \
+  --configfile config/config.yaml config/project_overrides.yaml
 ```
 
-Sort that TSV by `padj`; positive `log2FoldChange` = more open in *treatment*.
-
-**Step 7 — Motifs in the differential peaks** (needs the HOMER genome
-installed, §4):
+Open `results/my_project/qc/qc_review_report.html`, record technical inclusion
+or exclusion decisions without consulting differential outcomes, and freeze
+the sample sheet. Then repeat the dry-run and launch the complete analysis:
 
 ```bash
-snakemake --use-conda --cores 16 \
-  results/motif/up/homerResults.html \
-  results/motif/down/homerResults.html
+bash run.sh --dry-run \
+  --configfile config/config.yaml config/project_overrides.yaml
+bash run.sh --cores 8 \
+  --configfile config/config.yaml config/project_overrides.yaml
 ```
 
-Open the HOMER HTML to see enriched known + de-novo TF motifs driving the
-opened/closed regions.
+The dedicated `qc_review` target has an exact manifest that excludes consensus
+counts, DESeq2, enrichment, motif, footprint, and chromVAR results. The final
+`multiqc_report.html` is a combined post-analysis report, not the outcome-blind
+inclusion gate.
 
-**Step 8 (optional) — TF footprinting** across conditions with TOBIAS. Provide
-a motif database and switch it on:
-
-```yaml
-footprinting:
-  enabled: true
-  motif_db: "resources/motifs/JASPAR2022_CORE_vertebrates.meme"
-```
+Run one target when a full run is not needed:
 
 ```bash
-snakemake --use-conda --cores 16
+bash run.sh --cores 8 \
+  results/my_project/qc/multiqc_report.html \
+  --configfile config/config.yaml config/project_overrides.yaml
+bash run.sh --cores 8 \
+  results/my_project/consensus/consensus_peaks.bed \
+  --configfile config/config.yaml config/project_overrides.yaml
 ```
 
-BINDetect output ranks TFs by differential binding between your conditions.
+The workflow is restartable. Re-running the same command schedules only
+missing, incomplete, or outdated work. Keep this base-then-overlay order for
+dry-runs, production runs, targets, restarts, and summaries.
 
-## 13. Troubleshooting
+## Start with quality control
 
-- **`conda: command not found` during `--use-conda`** — activate the controller
-  env (`conda activate atacseq-smk`) and ensure conda/mamba is on `PATH`.
-- **Genome download fails** — Ensembl FTP can rate-limit; set `genome.fasta`
-  and `genome.gtf` to local copies, or re-run (rules retry).
-- **`Genrich` errors on name sorting** — Genrich requires name-sorted BAMs; the
-  pipeline handles this (`namesort_for_genrich`). If you feed your own BAMs,
-  keep them name-sorted.
-- **ChIPseeker can't find a TxDb** — it falls back to building one from your
-  GTF automatically; for gene *symbols* install the matching `OrgDb`.
-- **chromVAR/HOMER skipped** — they need the BSgenome / HOMER genome packages
-  (§4). The rest of the pipeline is unaffected.
-- **Few or no consensus peaks** — lower `peaks.consensus_min_overlap`, check
-  FRiP/TSS QC; low-complexity libraries yield few reproducible peaks.
-- **Re-run after editing config** — `snakemake --use-conda --cores 16 -R $(snakemake --list-params-changes)` or simply target the affected outputs.
+Open `results/my_project/qc/qc_review_report.html` before building or
+interpreting differential results. Review every library for:
 
-## 14. References
+- read quality and adapter content
+- mapping and usable-fragment yield
+- duplicate rate and library complexity
+- mitochondrial fraction
+- fragment-size periodicity
+- TSS enrichment
+- FRiP
+- outcome-blind genome-bin PCA, sample correlation, and replicate similarity
 
-1. Buenrostro JD, Giresi PG, Zaba LC, Chang HY, Greenleaf WJ. *Transposition of native chromatin for fast and sensitive epigenomic profiling of open chromatin, DNA-binding proteins and nucleosome position.* **Nature Methods** 2013;10:1213–1218. (Original ATAC-seq; Tn5 +4/−5 shift.)
-2. Yan F, Powell DR, Curtis DJ, Wong NC. *From reads to insight: a hitchhiker's guide to ATAC-seq data analysis.* **Genome Biology** 2020;21:22. (End-to-end best-practice guide this pipeline follows.) PMID 32014034.
-3. ENCODE Project Consortium. *ATAC-seq Data Standards and Processing Pipeline.* ENCODE Portal (encodeproject.org). (QC thresholds, filtering standards.)
-4. Langmead B, Salzberg SL. *Fast gapped-read alignment with Bowtie 2.* **Nature Methods** 2012;9:357–359.
-5. Chen S, Zhou Y, Chen Y, Gu J. *fastp: an ultra-fast all-in-one FASTQ preprocessor.* **Bioinformatics** 2018;34:i884–i890.
-6. Amemiya HM, Kundaje A, Boyle AP. *The ENCODE Blacklist: Identification of Problematic Regions of the Genome.* **Scientific Reports** 2019;9:9354.
-7. Zhang Y, Liu T, Meyer CA, et al. *Model-based Analysis of ChIP-Seq (MACS).* **Genome Biology** 2008;9:R137. (MACS; MACS3 is the current release.)
-8. Gaspar JM. *Genrich: detecting sites of genomic enrichment.* 2018. github.com/jsh58/Genrich. (ATAC mode `-j`.)
-9. Liao Y, Smyth GK, Shi W. *featureCounts: an efficient general-purpose program for assigning sequence reads to genomic features.* **Bioinformatics** 2014;30:923–930.
-10. Love MI, Huber W, Anders S. *Moderated estimation of fold change and dispersion for RNA-seq data with DESeq2.* **Genome Biology** 2014;15:550.
-11. Yu G, Wang LG, He QY. *ChIPseeker: an R/Bioconductor package for ChIP peak annotation, comparison and visualization.* **Bioinformatics** 2015;31:2382–2383.
-12. Heinz S, Benner C, Spann N, et al. *Simple combinations of lineage-determining transcription factors prime cis-regulatory elements (HOMER).* **Molecular Cell** 2010;38:576–589.
-13. Bentsen M, Goymann P, Schultheis H, et al. *ATAC-seq footprinting unravels kinetics of transcription factor binding during zygotic genome activation (TOBIAS).* **Nature Communications** 2020;11:4267. PMID 32848148.
-14. Schep AN, Wu B, Buenrostro JD, Greenleaf WJ. *chromVAR: inferring transcription-factor-associated accessibility from single-cell epigenomic data.* **Nature Methods** 2017;14:975–978.
-15. Ramírez F, Ryan DP, Grüning B, et al. *deepTools2: a next generation web server for deep-sequencing data analysis.* **Nucleic Acids Research** 2016;44:W160–W165. (bamCoverage, alignmentSieve `--ATACshift`, computeMatrix.)
-16. Ewels P, Magnusson M, Lundin S, Käller M. *MultiQC: summarize analysis results for multiple tools and samples in a single report.* **Bioinformatics** 2016;32:3047–3048.
-17. Mölder F, Jablonski KP, Letcher B, et al. *Sustainable data analysis with Snakemake.* **F1000Research** 2021;10:33.
-18. Li H, Handsaker B, Wysoker A, et al. *The Sequence Alignment/Map format and SAMtools.* **Bioinformatics** 2009;25:2078–2079.
+Do not exclude a sample solely because it weakens a desired contrast. Record a
+technical reason, preserve the original row, set its `include` cell to `false`
+in `config/samples.project.tsv`, and rerun the dry-run before analysis.
 
----
+## Main outputs
 
-*Built for reproducible bulk ATAC-seq on Ubuntu/Linux with Snakemake, conda,
-Python and R. Verified by Snakemake DAG dry-run (87-job full workflow) plus
-unit tests of the consensus and TSS helper scripts.*
+| Path | Meaning |
+|---|---|
+| `results/my_project/qc/qc_review_report.html` | Outcome-blind library QC report used before inclusion is frozen |
+| `results/my_project/qc/multiqc_report.html` | Final combined QC and analysis-figure report |
+| `results/my_project/qc/summary/qc_decisions_mqc.tsv` | Transparent per-library QC metrics and review flags |
+| `results/my_project/filtered/` | Analysis-ready BAM files |
+| `results/my_project/coverage/` | Fragment-level and Tn5 cut-site CPM bigWig tracks |
+| `results/my_project/peaks/macs3/` | Per-sample narrowPeak files |
+| `results/my_project/peaks/genrich/` | Optional per-condition Genrich peaks |
+| `results/my_project/consensus/consensus_peaks.bed` | Replicate-supported consensus universe |
+| `results/my_project/counts/per_sample/` | Independently restartable featureCounts tables and assignment summaries |
+| `results/my_project/counts/consensus_counts.tsv` | Peak-by-sample fragment counts |
+| `results/my_project/diffacc/` | DESeq2 table, finite-p-value tested peak set, normalized counts, and figures |
+| `results/my_project/annotation/` | Genomic annotation of consensus peaks |
+| `results/my_project/enrichment/` | GO and optional KEGG over-representation results |
+| `results/my_project/motif/` | HOMER results for more-open and less-open peaks |
+| `results/my_project/chromvar/` | Optional motif deviation results |
+| `results/my_project/footprint/` | Optional TOBIAS outputs from condition-merged final filtered BAMs |
+| `results/my_project/figures/` | Vector fragment-size, TSS, and outcome-blind sample-similarity figures |
+| `results/my_project/provenance/` | Effective config, sample copy, raw-input/reference/environment hashes, and run manifest |
+| `results/my_project/provenance/project_record/` | Project-managed base/overlay/sample copies, hashes, software check, and run summary; see the tutorial |
+| `logs/my_project/` | Per-rule diagnostic logs |
 
----
+These paths match the copied project overlay. Substitute the project name if
+you changed it; custom root settings replace the corresponding prefixes.
 
-## License & usage
+## Standards boundary
 
-The pipeline's own code is **MIT** (see [LICENSE](LICENSE)). It bundles no third-party code or data;
-tools are conda-installed and invoked, so the MIT license is unaffected by the (incl. GPL) licenses of
-those tools. Full breakdown: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+ORACLE follows widely used bulk ATAC-seq practices: paired-end mapping,
+high-confidence filtering, duplicate and blacklist removal, Tn5-aware
+processing, ATAC-specific QC, replicate-aware peaks, count-based differential
+analysis, and reproducible per-rule software environments.
 
-> ⚠️ **The HOMER motif step is academic / non-profit only** — HOMER is freeware, not open-source, and
-> not redistributable; commercial use requires the author's permission (and its genome packages are
-> UCSC-derived). For commercial use, obtain permission or skip the HOMER motif step; peak calling,
-> differential accessibility, and JASPAR footprinting do not depend on it.
+It should still be reviewed for each study. Reference FASTA, GTF, chromosome
+names, blacklist, and annotation packages must describe the same assembly.
+There is no official Boyle Lab mm39 blacklist; do not apply an mm10 blacklist
+to mm39 coordinates without a documented, validated liftover. Thresholds are
+guides rather than substitutes for experimental context.
+
+The consensus method is intentionally transparent: peaks are converted to
+fixed-width summit-centered intervals, retained when supported by the
+configured number of biological replicates **within at least one condition**,
+then combined across conditions. This preserves condition-specific peaks, but
+it is not the ENCODE IDR procedure and does not calculate rescue or
+self-consistency ratios.
+
+## Documentation
+
+- [Complete beginner-to-advanced tutorial](TUTORIAL.md)
+- [Contributing guide](CONTRIBUTING.md)
+- [Third-party licenses and data terms](THIRD_PARTY_LICENSES.md)
+- [Citation metadata](CITATION.cff)
+
+## License and citation
+
+The workflow code is available under the [MIT License](LICENSE). Tools and
+reference data retain their own licenses and terms; see
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+If you use the workflow, cite the software repository and the methods relevant
+to the stages you report. The tutorial provides a curated reference list.

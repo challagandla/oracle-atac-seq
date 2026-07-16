@@ -30,12 +30,12 @@ filtering:
   tn5_shift: true
 
 peaks:
-  caller: "macs3"
   run_genrich: true
   macs3_qvalue: 0.01
-  macs3_extra: "--nomodel --shift -75 --extsize 150 -B --keep-dup all"
-  genrich_extra: "-j -r -e chrM -q 0.05"
-  consensus_min_overlap: 2
+  macs3_extra: "--keep-dup all"
+  genrich_extra: "-j -q 0.05"
+  consensus_min_replicates: 2
+  consensus_peak_width: 500
 
 diffacc:
   enabled: true

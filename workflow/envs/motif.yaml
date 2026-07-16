@@ -7,5 +7,3 @@ dependencies:
   - homer=4.11
   - samtools=1.20
   - perl
-  # After creating this env, install the matching HOMER genome once, e.g.:
-  #   configureHomer.pl -install hg38

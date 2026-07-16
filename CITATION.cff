@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use ORACLE ATAC-seq, cite this software and the methods used in your analysis."
+title: "ORACLE ATAC-seq"
+type: software
+authors:
+  - given-names: Anil
+    family-names: Challagandla
+repository-code: "https://github.com/challagandla/oracle-atac-seq"
+url: "https://github.com/challagandla/oracle-atac-seq"
+license: MIT
+abstract: >-
+  A Snakemake workflow for reproducible paired-end bulk ATAC-seq processing,
+  quality control, peak quantification, differential accessibility, annotation,
+  motif enrichment, and optional transcription-factor analyses.
+keywords:
+  - ATAC-seq
+  - chromatin accessibility
+  - epigenomics
+  - bioinformatics
+  - Snakemake

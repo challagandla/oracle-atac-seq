@@ -7,20 +7,36 @@ dependencies:
   - r-base=4.3
   - r-optparse
   - r-ggplot2
+  - r-ggrepel
   - r-pheatmap
   - r-rcolorbrewer
+  - r-matrixstats
+  - r-ashr
   - bioconductor-deseq2=1.42
   - bioconductor-chipseeker=1.38
+  - bioconductor-clusterprofiler   # GO/KEGG enrichment of DA genes
+  - bioconductor-enrichplot        # dotplot() for enrichment figures
   - bioconductor-genomicranges
   - bioconductor-genomicfeatures
+  - bioconductor-annotationdbi=1.64
   - bioconductor-rtracklayer
   - bioconductor-chromvar=1.24
   - bioconductor-motifmatchr
   - bioconductor-summarizedexperiment
   - bioconductor-jaspar2020
   - bioconductor-tfbstools
-  # TxDb/OrgDb/BSgenome packages are large; install the ones matching your
-  # genome on first use, e.g.:
-  #   - bioconductor-txdb.hsapiens.ucsc.hg38.knowngene
-  #   - bioconductor-org.hs.eg.db
-  #   - bioconductor-bsgenome.hsapiens.ucsc.hg38
+  # Genome annotation data packages for every built-in preset. Keeping these in
+  # one solved environment makes human, mouse (mm39/mm10), and rat runs behave
+  # the same out of the box. Custom genomes need matching packages added here.
+  - bioconductor-txdb.hsapiens.ucsc.hg38.knowngene
+  - bioconductor-org.hs.eg.db
+  - bioconductor-bsgenome.hsapiens.ucsc.hg38
+  - bioconductor-txdb.mmusculus.ucsc.mm39.refgene
+  - bioconductor-txdb.mmusculus.ucsc.mm10.knowngene
+  - bioconductor-org.mm.eg.db
+  - bioconductor-bsgenome.mmusculus.ucsc.mm39
+  - bioconductor-bsgenome.mmusculus.ucsc.mm10
+  - bioconductor-txdb.rnorvegicus.ucsc.rn7.refgene
+  - bioconductor-org.rn.eg.db
+  - bioconductor-bsgenome.rnorvegicus.ucsc.rn7
+  - bioconductor-biocparallel=1.36

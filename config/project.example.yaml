@@ -1,0 +1,22 @@
+# Copy this file to config/project_overrides.yaml for each analysis.
+# Keep only project-specific differences here; config/config.yaml remains the
+# reviewed public base configuration and is loaded first.
+
+samples: "config/samples.project.tsv"
+
+# Keep every project's generated files in its own namespace. Replace
+# "my_project" with a short, filesystem-safe project name in your private copy.
+results_dir: "results/my_project"
+raw_dir: "results/my_project/fastq"
+processed_dir: "results/my_project"
+logs_dir: "logs/my_project"
+reference_dir: "resources/reference_my_project"
+
+# Other common overrides:
+# genome:
+#   build: "human"
+# filtering:
+#   mitochondrial_contigs: ["chrM", "MT", "chrMT", "Mito", "M"]
+# diffacc:
+#   design: "~condition"
+#   contrast: ["condition", "treatment", "control"]

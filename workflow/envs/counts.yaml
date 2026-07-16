@@ -1,0 +1,9 @@
+name: atac-counts
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.4
+  - bioconductor-rsubread=2.20.0
+  - python=3.11

@@ -1,7 +1,8 @@
 # =============================================================================
 # ATAC-seq Snakemake pipeline — main configuration
 # =============================================================================
-# Edit this file to point the pipeline at your data and reference genome.
+# Keep this tracked base unchanged; copy config/project.example.yaml and place
+# project-specific settings in the ignored config/project_overrides.yaml.
 # Every path is relative to the directory you launch `snakemake` from
 # (the repository root) unless given as an absolute path.
 # -----------------------------------------------------------------------------
@@ -9,12 +10,58 @@
 # Sample sheet (TSV). See config/samples.tsv for the format.
 samples: "config/samples.tsv"
 
+# Optional run directories. Leave these defaults for normal runs. Override them
+# for isolated smoke tests or multiple analyses from the same checkout. Leave
+# raw_dir/processed_dir blank to derive them from results_dir and preserve the
+# historical single-results-tree layout.
+results_dir: "results"
+raw_dir: ""
+processed_dir: ""
+logs_dir: "logs"
+reference_dir: "resources/reference"
+
+# SRA download options. Set max_spots to a positive integer for small real-data
+# smoke tests; full production downloads use prefetch + fasterq-dump.
+sra:
+  max_spots: 0
+  max_size: "100G"
+
+# QC controls. Production defaults run the full ATAC QC metrics. Small smoke
+# tests can disable or bound expensive deepTools summaries while keeping target
+# files and MultiQC inputs present.
+qc:
+  fragment_sizes:
+    enabled: true
+  tss:
+    enabled: true
+    # 0 uses every TSS. A positive value selects one reproducible, evenly
+    # distributed genome-wide subset shared by every per-sample/aggregate plot.
+    max_regions: 0
+  # ENCODE library-complexity metrics (NRF / PBC1 / PBC2) from the pre-dedup BAM.
+  library_complexity: true
+  # deepTools fingerprint (signal-to-noise across all libraries).
+  fingerprint: true
+  # Outcome-blind genome-bin correlation and PCA from fragment CPM bigWigs.
+  # Requires 2+ libraries and at most 12 conditions; see the tutorial.
+  sample_similarity: true
+
+# -----------------------------------------------------------------------------
+# Report / publication figures
+# -----------------------------------------------------------------------------
+# Aggregate, cross-sample figures (fragment-size overlay, TSS metagene heatmap +
+# profile + numeric enrichment score). Vector PDFs land in results/figures and
+# are also folded into the single MultiQC report. Disable for cheap smoke tests.
+# Categorical overlays support at most 12 conditions.
+report:
+  enabled: true
+
 # -----------------------------------------------------------------------------
 # Reference genome
 # -----------------------------------------------------------------------------
 # The pipeline is genome-agnostic. Choose one of the presets below by setting
-# `genome.build`, or override any field manually. Supported presets ship with
-# the correct ENCODE blacklist, effective genome size and MACS gsize.
+# `genome.build`, or override any field manually. Presets ship with effective
+# genome sizes and MACS genome sizes. GRCh38 and mm10 have assembly-matched
+# blacklists; mm39 and rn7 require a matching user-provided BED.
 #
 #   human  -> GRCh38 / hg38
 #   mouse  -> GRCm39 / mm39   (use mm10 preset if your annotations are mm10)
@@ -25,8 +72,8 @@ samples: "config/samples.tsv"
 # skip downloading.
 genome:
   build: "human"            # human | mouse | mouse_mm10 | rat | custom
-  fasta: ""                 # optional: local path to genome FASTA (.fa/.fa.gz)
-  gtf: ""                   # optional: local path to gene annotation GTF
+  fasta: ""                 # optional: local uncompressed genome FASTA (.fa)
+  gtf: ""                   # optional: local uncompressed gene annotation (.gtf)
   blacklist: ""             # optional: local ENCODE blacklist BED (.bed/.bed.gz)
   # Used only when build == "custom":
   custom:
@@ -35,6 +82,10 @@ genome:
     ensembl_species: ""           # e.g. "homo_sapiens"
     ensembl_release: 111
     ensembl_assembly: ""          # e.g. "GRCh38"
+    taxid: 0                       # NCBI taxonomy ID for JASPAR / optional KEGG
+    txdb: ""                       # optional matching TxDb package; GTF is fallback
+    orgdb: ""                      # required when functional enrichment is enabled
+    bsgenome: ""                   # required when chromVAR is enabled
 
 # -----------------------------------------------------------------------------
 # Input mode
@@ -59,39 +110,58 @@ alignment:
   # -X 2000 keeps long ATAC fragments (nucleosomal). --very-sensitive improves
   # specificity. --no-mixed/--no-discordant keep only proper pairs.
   bowtie2_extra: "--very-sensitive -X 2000 --no-mixed --no-discordant"
+  # Set true for references that require Bowtie2's .bt2l large-index format.
+  large_index: false
 
 # -----------------------------------------------------------------------------
 # Post-alignment filtering
 # -----------------------------------------------------------------------------
 filtering:
   min_mapq: 30              # remove multi-mappers / low-confidence alignments
-  remove_mito: true         # drop chrM / MT reads (ATAC over-represents mito)
+  remove_mito: true         # fail if no configured mitochondrial contig exists
+  # Add an assembly-specific accession here for a custom reference when needed.
+  mitochondrial_contigs: ["chrM", "MT", "chrMT", "Mito", "M"]
   remove_blacklist: true    # drop reads overlapping ENCODE blacklist regions
-  keep_proper_pairs: true   # -f 2
+  keep_proper_pairs: true   # required: all fragment-level analyses use -f 2
   remove_duplicates: true   # Picard MarkDuplicates + remove
-  # Tn5 shift: +4 bp on + strand, -5 bp on - strand (Buenrostro et al. 2013)
+  # Required: +4 bp on + strand, -5 bp on - strand. Cut-site tracks and
+  # insertion-based QC are not valid when this is disabled.
   tn5_shift: true
+  # deepTools alignmentSieve chunks the genome and then concatenates temporary
+  # BAMs. Keep chunks large enough for full human ATAC libraries so it does not
+  # exceed file-descriptor limits on production runs.
+  tn5_shift_genome_chunk_length: 50000000
 
 # -----------------------------------------------------------------------------
 # Peak calling
 # -----------------------------------------------------------------------------
 peaks:
-  # caller: macs3 | genrich  (macs3 is the default; genrich is run additionally
-  # when `run_genrich: true` to cross-check reproducible peaks per group).
-  caller: "macs3"
+  # MACS3 is the primary per-library caller. Genrich can additionally pool each
+  # condition as a sensitivity check; it is not an IDR analysis.
   run_genrich: true
   macs3_qvalue: 0.01
-  macs3_extra: "--nomodel --shift -75 --extsize 150 -B --keep-dup all"
-  genrich_extra: "-j -r -e chrM -q 0.05"   # -j = ATAC mode
-  # Consensus peak set across replicates/groups:
-  consensus_min_overlap: 2   # a peak must appear in >= N samples of a group
+  # BAMPE mode uses observed fragment boundaries. Do not add --shift or
+  # --extsize; MACS3 does not allow non-zero shifts for BAMPE. --keep-dup all is
+  # safe because duplicate handling is explicit upstream.
+  # NOTE: -B/--bedgraph is intentionally omitted — it writes multi-GB pileup
+  # bedGraphs per sample that nothing downstream consumes (CPM bigWigs come from
+  # deepTools in coverage.smk). Add "-B" back only if you need MACS pileups.
+  macs3_extra: "--keep-dup all"
+  # Duplicate handling already happens upstream, so do not add Genrich -r here;
+  # omitting it also keeps remove_duplicates:false semantically consistent.
+  genrich_extra: "-j -q 0.05"   # -j = ATAC mode; mito filtering is upstream
+  # A fixed-width summit locus must be supported by this many distinct
+  # biological replicates within at least one condition. This is
+  # reproducibility-informed, but not ENCODE IDR/pseudoreplicate processing.
+  consensus_min_replicates: 2
+  consensus_peak_width: 500
 
 # -----------------------------------------------------------------------------
 # Differential accessibility
 # -----------------------------------------------------------------------------
 diffacc:
   enabled: true
-  method: "DESeq2"           # DESeq2 (via featureCounts on consensus peaks)
+  method: "DESeq2"           # DESeq2 on the checked per-library Rsubread count merge
   design: "~condition"       # R model formula; columns must exist in samples.tsv
   contrast: ["condition", "treatment", "control"]   # factor, numerator, denominator
   fdr: 0.05
@@ -105,6 +175,18 @@ annotation:
   tss_upstream: 3000
   tss_downstream: 3000
 
+# GO / KEGG functional enrichment of genes near differentially-accessible peaks
+# (clusterProfiler). Needs annotation.enabled + diffacc.enabled + a matching
+# OrgDb (installed with the r.yaml genome data packages).
+functional_enrichment:
+  enabled: true
+  ontologies: ["BP", "MF"]  # GO sub-ontologies to test (BP/MF/CC)
+  # KEGG uses a live web service during analysis. Enable only when that network
+  # dependency and the KEGG data terms are acceptable for the study.
+  kegg: false               # optionally test KEGG pathways online
+  qvalue: 0.05
+  top_n: 20                 # terms shown per dotplot
+
 motif:
   enabled: true             # HOMER de novo + known motif enrichment on diff peaks
   homer_size: 200
@@ -114,7 +196,12 @@ footprinting:
   motif_db: ""              # JASPAR .jaspar / .meme file of TF motifs
 
 chromvar:
-  enabled: false            # chromVAR per-sample motif accessibility deviations
+  enabled: false            # motif deviations; requires at least two libraries
+  top_n: 30                 # motifs shown in the deviation heatmap
+  # chromVAR draws GC/depth-matched background peaks and bootstraps its intervals,
+  # so it is randomised. Without a fixed seed the motif ranking changes on every
+  # run of the same data. Change this only to check how stable your ranking is.
+  seed: 1
 
 # -----------------------------------------------------------------------------
 # Resources (override per rule with --set-threads / profiles if needed)

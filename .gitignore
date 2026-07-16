@@ -1,15 +1,39 @@
+# Generated data and run outputs
+data/
+cohorts/
 results/
+
 logs/
 resources/
 .snakemake/
-data/
 *.bam
 *.bai
 *.bw
+*.fastq
+*.fq
 *.fastq.gz
+*.fq.gz
+# Test fixtures are source, not local pipeline data.
+!/.test/data/
+!/.test/data/**
+.env
+.env.*
+.venv/
+.idea/
+.vscode/
+.Rhistory
 .DS_Store
 __pycache__/
 *.pyc
 
-# Local Claude Code settings (machine-specific, not for the repo)
-.claude/
+# Project configuration copies stay untracked. The tracked files are templates.
+config/*_overrides.yaml
+config/samples.*.tsv
+
+# Tooling caches
+.cache/
+
+# HOMER scratch, written into the working directory while it runs. The numbered
+# ones reach hundreds of MB; `git add -A` mid-run will happily stage them.
+.tmp.motifs
+*.tmp

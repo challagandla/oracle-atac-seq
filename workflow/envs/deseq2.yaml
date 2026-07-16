@@ -1,0 +1,14 @@
+name: atac-deseq2
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - r-base=4.3
+  - r-optparse
+  - r-ggplot2
+  - r-ggrepel          # volcano/PCA point labels
+  - r-pheatmap
+  - r-matrixstats      # rowVars for PCA / most-variable peaks
+  - r-ashr             # adaptive LFC shrinkage (lfcShrink type="ashr")
+  - bioconductor-deseq2=1.42

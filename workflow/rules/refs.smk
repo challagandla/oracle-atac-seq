@@ -64,9 +64,10 @@ rule download_gtf:
 
 rule download_blacklist:
     output:
-        f"{REF}/blacklist.bed",
+        f"{REF}/blacklist.raw.bed",
     params:
         url=GENOME.get("blacklist_url", ""),
+        md5=GENOME.get("blacklist_md5", ""),
     log:
         f"{LOGS}/refs/download_blacklist.log",
     conda:
@@ -78,10 +79,40 @@ rule download_blacklist:
             echo "No blacklist URL for this genome; writing empty file." > {log}
             : > {output}
         else
-            (curl -L --retry 3 -o {REF}/blacklist.bed.gz "{params.url}" \
-              || wget -O {REF}/blacklist.bed.gz "{params.url}") 2> {log}
-            gunzip -f {REF}/blacklist.bed.gz 2>> {log}
+            (curl -L --retry 3 -o {REF}/blacklist.raw.bed.gz "{params.url}" \
+              || wget -O {REF}/blacklist.raw.bed.gz "{params.url}") 2> {log}
+            if [ -n "{params.md5}" ]; then
+                echo "{params.md5}  {REF}/blacklist.raw.bed.gz" \
+                  | md5sum --check --status - || {{
+                    echo "blacklist checksum verification failed" >> {log}; exit 1;
+                  }}
+            fi
+            gunzip -f {REF}/blacklist.raw.bed.gz 2>> {log}
         fi
+        """
+
+
+# The ENCODE blacklists ship with UCSC names (chr1); Ensembl genomes call the
+# same sequence 1. bedtools matches on the name, so the mismatch makes blacklist
+# filtering a silent no-op. Rename to whatever the genome calls its chromosomes,
+# and fail if the two cannot be reconciled.
+rule harmonize_blacklist:
+    input:
+        blacklist=blacklist_source(),
+        chrom=f"{REF}/chrom.sizes",
+        scripts=script_inputs("harmonize_blacklist.py"),
+    output:
+        f"{REF}/blacklist.harmonized.bed",
+    log:
+        f"{LOGS}/refs/harmonize_blacklist.log",
+    conda:
+        "../envs/peaks.yaml"
+    shell:
+        r"""
+        python workflow/scripts/harmonize_blacklist.py \
+            --blacklist {input.blacklist} \
+            --chrom-sizes {input.chrom} \
+            --out {output} 2> {log}
         """
 
 
@@ -104,19 +135,20 @@ rule chrom_sizes:
     output:
         f"{REF}/chrom.sizes",
     shell:
-        "cut -f1,2 {input} > {output}"
+        r"""
+        mkdir -p {REF}
+        cut -f1,2 {input} > {output}
+        """
 
 
 rule bowtie2_build:
     input:
         genome_fasta(),
     output:
-        expand(
-            bowtie2_index_prefix() + ".{ext}",
-            ext=["1.bt2", "2.bt2", "3.bt2", "4.bt2", "rev.1.bt2", "rev.2.bt2"],
-        ),
+        bowtie2_index_files(),
     params:
         prefix=bowtie2_index_prefix(),
+        mode=bowtie2_build_mode(),
     threads: config["resources"]["align_threads"]
     log:
         f"{LOGS}/refs/bowtie2_build.log",
@@ -125,7 +157,7 @@ rule bowtie2_build:
     shell:
         r"""
         mkdir -p $(dirname {params.prefix})
-        bowtie2-build --threads {threads} {input} {params.prefix} 2> {log}
+        bowtie2-build {params.mode} --threads {threads} {input} {params.prefix} 2> {log}
         """
 
 
@@ -133,6 +165,8 @@ rule bowtie2_build:
 rule tss_bed:
     input:
         gtf=genome_gtf(),
+        chrom=f"{REF}/chrom.sizes",
+        scripts=script_inputs("gtf_to_tss.py"),
     output:
         f"{REF}/tss.bed",
     log:
@@ -141,5 +175,8 @@ rule tss_bed:
         "../envs/qc.yaml"
     shell:
         r"""
-        python workflow/scripts/gtf_to_tss.py {input.gtf} {output} 2> {log}
+        mkdir -p {REF}
+        python workflow/scripts/gtf_to_tss.py {input.gtf} {output} \
+            --chrom-sizes {input.chrom} 2> {log}
+        test -s {output}
         """

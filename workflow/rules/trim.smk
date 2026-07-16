@@ -10,10 +10,10 @@ rule fastp:
         r1=lambda wc: raw_fastqs(wc.sample)[0],
         r2=lambda wc: raw_fastqs(wc.sample)[1],
     output:
-        r1=f"{RESULTS}/trimmed/{{sample}}_R1.trimmed.fastq.gz",
-        r2=f"{RESULTS}/trimmed/{{sample}}_R2.trimmed.fastq.gz",
-        json=f"{RESULTS}/qc/fastp/{{sample}}.fastp.json",
-        html=f"{RESULTS}/qc/fastp/{{sample}}.fastp.html",
+        r1=f"{PROCESSED}/trimmed/{{sample}}_R1.trimmed.fastq.gz",
+        r2=f"{PROCESSED}/trimmed/{{sample}}_R2.trimmed.fastq.gz",
+        json=f"{PROCESSED}/qc/fastp/{{sample}}.fastp.json",
+        html=f"{PROCESSED}/qc/fastp/{{sample}}.fastp.html",
     params:
         enabled=config["trimming"]["enabled"],
         extra=config["trimming"]["extra"],
@@ -31,8 +31,32 @@ rule fastp:
                   --thread {threads} {params.extra} \
                   -j {output.json} -h {output.html} 2> {log}
         else
-            ln -sf $(readlink -f {input.r1}) {output.r1}
-            ln -sf $(readlink -f {input.r2}) {output.r2}
+            # Downstream paths always end in .gz. Preserve real gzip inputs as
+            # symlinks, but compress plain FASTQ rather than giving it a false
+            # suffix that Bowtie2 would try to decompress.
+            r1_part="{output.r1}.part.$$"
+            r2_part="{output.r2}.part.$$"
+            cleanup() {{ rm -f -- "$r1_part" "$r2_part"; }}
+            trap cleanup EXIT
+            pass_fastq() {{
+                src="$1"; dest="$2"; part="$3"
+                case "$src" in
+                    *.gz)
+                        gzip -t "$src"
+                        resolved=$(python -c \
+                            'import os,sys; sys.stdout.write(os.path.realpath(sys.argv[1]))' \
+                            "$src")
+                        ln -sfn "$resolved" "$dest"
+                        ;;
+                    *)
+                        gzip -c "$src" > "$part"
+                        gzip -t "$part"
+                        mv -f "$part" "$dest"
+                        ;;
+                esac
+            }}
+            pass_fastq {input.r1:q} {output.r1:q} "$r1_part"
+            pass_fastq {input.r2:q} {output.r2:q} "$r2_part"
             echo '{{"summary":{{"note":"trimming disabled"}}}}' > {output.json}
             echo "<html><body>trimming disabled</body></html>" > {output.html}
         fi

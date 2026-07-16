@@ -13,5 +13,5 @@
 *.tsv    text eol=lf
 Snakefile text eol=lf
 
-# Binary fixtures (none yet) would be marked here, e.g.:
-# *.bam binary
+# Compressed test fixtures and any intentionally tracked archives are binary.
+*.gz binary

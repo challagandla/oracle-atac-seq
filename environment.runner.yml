@@ -1,0 +1,18 @@
+name: oracle-atac-runner
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.11
+  - snakemake-minimal=7.32.4
+  - setuptools<81
+  - pandas=2.2.*
+  - pysam=0.22.*
+  - pyyaml=6.*
+  - conda>=24.7
+  - conda-libmamba-solver
+  - mamba
+  - graphviz
+  - pytest
+  - tabulate
