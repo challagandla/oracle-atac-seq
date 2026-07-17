@@ -11,32 +11,60 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   lint-and-dryrun:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash -leo pipefail {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Create tested runner environment
+        uses: mamba-org/setup-micromamba@d7c9bd84e824b79d2af72a2d4196c7f4300d3476 # v3
         with:
-          python-version: "3.11"
+          environment-file: environment.runner.yml
+          environment-name: oracle-atac-runner
+          cache-environment: true
+          cache-downloads: true
 
-      - name: Install Snakemake
+      - name: Verify runner
         run: |
-          python -m pip install --upgrade pip
-          # >=7.29 for the --workflow-profile flag used below.
-          pip install "snakemake-minimal>=7.29,<8" pandas
+          test "$(snakemake --version)" = "7.32.4"
+          python -c 'import pandas, pysam, yaml'
 
-      - name: Lint workflow
+      - name: Static checks
+        run: |
+          bash -n setup.sh run.sh scripts/setup_envs.sh
+          python -m py_compile workflow/scripts/*.py tests/*.py
+
+      - name: Unit tests
+        run: python -m pytest tests/ -q
+
+      - name: Dry-run environment smoke workflow
+        run: |
+          snakemake -n \
+            --snakefile workflow/envs.smk \
+            --workflow-profile none \
+            --cores 1
+
+      - name: Lint workflow (advisory)
+        # Keep style advice visible without masking the separately gated tests.
+        continue-on-error: true
         run: |
           snakemake --lint \
+            --snakefile workflow/Snakefile \
             --configfile .test/test_config.yaml \
-            --workflow-profile none || true
+            --workflow-profile none
 
       - name: Dry-run DAG (test config)
         run: |
           snakemake -n \
+            --snakefile workflow/Snakefile \
             --configfile .test/test_config.yaml \
             --workflow-profile none \
             --cores 2
@@ -44,6 +72,7 @@ jobs:
       - name: Build DAG graph (sanity)
         run: |
           snakemake --dag \
+            --snakefile workflow/Snakefile \
             --configfile .test/test_config.yaml \
             --workflow-profile none \
             --cores 2 > /dev/null
